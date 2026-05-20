@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Secrets
+.env
+.env.local
+
+# 运行时产物
+**/_faiss_index/
+**/_chroma/
+*.log
+.DS_Store
+
+# 08_agent_harness 运行产物（保留目录，忽略内容）
+08_agent_harness/.sessions/
+08_agent_harness/workspace/*
+!08_agent_harness/workspace/.gitkeep
