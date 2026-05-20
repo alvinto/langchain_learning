@@ -3,8 +3,11 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![LangChain](https://img.shields.io/badge/LangChain-0.3%20%7C%201.x-green.svg)](https://python.langchain.com/)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![syntax-check](https://github.com/zz-big/langchain_learning/actions/workflows/syntax-check.yml/badge.svg)](https://github.com/zz-big/langchain_learning/actions/workflows/syntax-check.yml)
 
 > 一份循序渐进、可独立运行的 **LangChain Agent 学习仓库**，目标是把 Agent 从"调用 LLM"一路带到"迷你版 Claude Code 风格的 Agent Harness"。
+
+> 🇬🇧 [English README](README-en.md)
 
 每一章一个目录、一个文件一个知识点、所有 demo 直接 `python ...` 就能跑。模型默认走 **OpenAI 兼容协议**，方便切换 DeepSeek / 通义千问 / 智谱 / Ollama / OpenAI 等任一提供方。
 

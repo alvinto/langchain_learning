@@ -1,0 +1,31 @@
+name: syntax-check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  py-compile:
+    name: py_compile (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile-check all .py files
+        # py_compile 是纯语法检查，不需要装任何依赖，秒级跑完
+        # 任意一个文件语法错误整个 CI 会挂——这就是"保证 demo 至少能加载"的最低底线
+        run: |
+          python -m compileall -q -f . \
+            -x '\.venv|__pycache__|build|dist'
