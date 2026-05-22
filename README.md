@@ -130,10 +130,19 @@ $ python 05_tools_agents/03_react_agent.py
 ├── 05_tools_agents/           # 工具 / Agent
 ├── 06_langgraph/              # LangGraph 状态图
 ├── 07_project_knowledge_bot/  # 完整项目：知识库问答机器人
-└── 08_agent_harness/          # 迷你版 Claude Code 风格 Agent Harness
+├── 08_agent_harness/          # 迷你版 Claude Code 风格 Agent Harness
+├── 09_deep_research/          # Deep Research Agent（multi-agent + 动态调度）
+└── docs/                      # 延伸阅读：精选文章 + 框架对照（不在主线里也能看）
 ```
 
 每章一份 README，每个 `.py` 文件顶部都有中文说明 + `if __name__ == "__main__"` 入口，按顺序读就行。
+
+## 📚 延伸阅读
+
+把 repo 章节没法完整覆盖的"为什么"和"前沿动态"放在 [`docs/`](docs/) 下：
+
+- [docs/agent-reading-list.md](docs/agent-reading-list.md) — 精选 Agent 学习文章（按【必读】【推荐】【参考】打标）
+- [docs/agent-frameworks.md](docs/agent-frameworks.md) — Lilian Weng 三支柱 / Anthropic Augmented LLM / Manus 5 维上下文工程对照，映射回本 repo 各章
 
 ## 设计原则
 
