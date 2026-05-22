@@ -30,3 +30,7 @@ env/
 08_agent_harness/.sessions/
 08_agent_harness/workspace/*
 !08_agent_harness/workspace/.gitkeep
+
+# 09_deep_research 生成的报告（保留目录，忽略输出）
+09_deep_research/reports/*
+!09_deep_research/reports/.gitkeep

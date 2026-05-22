@@ -79,14 +79,34 @@ def _setup_langsmith() -> None:
 _setup_langsmith()
 
 
-def get_llm(temperature: float = 0.7, **kwargs):
-    """返回一个 ChatOpenAI 实例（兼容所有 OpenAI 协议提供方）。"""
+def get_llm(temperature: float = 0.7, role: str | None = None, **kwargs):
+    """返回一个 ChatOpenAI 实例（兼容所有 OpenAI 协议提供方）。
+
+    role 用来做模型分层 —— 09 章 deep_research 这种 multi-agent 系统
+    可以在不同节点用不同档位的模型省钱+提速：
+        - role="cheap"  → 总结/压缩这种粗活，用便宜模型
+        - role="smart"  → 决策/规划这种关键路径，用好模型
+        - role="writer" → 最终报告，质量优先
+
+    实际取哪个模型按这个优先级解析：
+        1. kwargs 里显式传的 model （最高）
+        2. 环境变量 LLM_MODEL_<ROLE>（如 LLM_MODEL_SMART）
+        3. 环境变量 LLM_MODEL（兜底，所有 demo 都能直接跑）
+
+    不传 role 时跟旧行为完全一致 —— 老 demo（01~08 章）不受影响。
+    """
     from langchain_openai import ChatOpenAI
+
+    model = kwargs.pop("model", None)
+    if model is None and role:
+        model = os.getenv(f"LLM_MODEL_{role.upper()}")
+    if model is None:
+        model = os.getenv("LLM_MODEL", "deepseek-chat")
 
     return ChatOpenAI(
         base_url=os.getenv("LLM_BASE_URL"),
         api_key=os.getenv("LLM_API_KEY"),
-        model=os.getenv("LLM_MODEL", "deepseek-chat"),
+        model=model,
         temperature=temperature,
         **kwargs,
     )

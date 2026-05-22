@@ -23,13 +23,15 @@
 | **[06_langgraph/](06_langgraph/)** | **LangGraph** | 状态图、ToolNode、条件边、人在回路、checkpoint |
 | [07_project_knowledge_bot/](07_project_knowledge_bot/) | 完整项目 · 知识库问答 | RAG + 多轮对话 + 引用来源（前 6 章的综合） |
 | **[08_agent_harness/](08_agent_harness/)** | **迷你 Claude Code** | 工具沙箱、权限网关、Hook 总线、子 Agent、上下文压缩、错误预算 |
+| **[09_deep_research/](09_deep_research/)** | **Deep Research Agent** | LangGraph `Send` 动态 fan-out、多 Agent 并行、网页检索/抽取、带引用 Markdown 报告 |
 
-加粗的四章是 **Agent 主线**，也是这份仓库的重点。
+加粗的五章是 **Agent 主线**，也是这份仓库的重点。
 
 读完之后你应该能：
 - 用 `create_agent` 在 30 行内拼一个会调工具的 Agent
 - 用 LangGraph `StateGraph` 手写循环、分支、人在回路的复杂 Agent
 - 理解 Claude Code / Cursor / Cline 这类产品 90% 的复杂度 ——在 **Harness 层**，不在 LLM 调用本身
+- 用 `Send` API 编排多 Agent 并行研究、做出 Perplexity / Deep Research 风格的产品
 
 ## 快速开始
 
