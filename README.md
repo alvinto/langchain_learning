@@ -24,6 +24,7 @@
 | [07_project_knowledge_bot/](07_project_knowledge_bot/) | 完整项目 · 知识库问答 | RAG + 多轮对话 + 引用来源（前 6 章的综合） |
 | **[08_agent_harness/](08_agent_harness/)** | **迷你 Claude Code** | 工具沙箱、权限网关、Hook 总线、子 Agent、上下文压缩、错误预算 |
 | **[09_deep_research/](09_deep_research/)** | **Deep Research Agent** | LangGraph `Send` 动态 fan-out、多 Agent 并行、网页检索/抽取、带引用 Markdown 报告 |
+| [10_blog_to_video/](10_blog_to_video/) | 博客 → 讲解视频 | 视觉大纲规划 + 主题化 HTML 模板 + Playwright 截屏 + edge-tts + MoviePy 端到端 |
 
 加粗的五章是 **Agent 主线**，也是这份仓库的重点。
 
@@ -132,6 +133,7 @@ $ python 05_tools_agents/03_react_agent.py
 ├── 07_project_knowledge_bot/  # 完整项目：知识库问答机器人
 ├── 08_agent_harness/          # 迷你版 Claude Code 风格 Agent Harness
 ├── 09_deep_research/          # Deep Research Agent（multi-agent + 动态调度）
+├── 10_blog_to_video/          # 博客 → 讲解视频（LLM + HTML 模板 + TTS + 视频合成）
 └── docs/                      # 延伸阅读：精选文章 + 框架对照（不在主线里也能看）
 ```
 

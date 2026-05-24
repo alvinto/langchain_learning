@@ -1,0 +1,5 @@
+<section class="slide layout-quote" data-page="{{ page_num }}">
+  <p class="text">{{ slide.text }}</p>
+  {% if slide.cite %}<p class="cite">{{ slide.cite }}</p>{% endif %}
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

@@ -1,0 +1,15 @@
+<section class="slide layout-principles" data-page="{{ page_num }}">
+  <div class="accent-bar"></div>
+  <h2 class="h-title">{{ slide.title }}</h2>
+  <div class="cards n-{{ slide['items']|length }}">
+    {% for p in slide['items'] %}
+    <div class="card">
+      <div class="num">{{ "%02d"|format(loop.index) }}</div>
+      {% if p.icon %}<div class="ico"><i data-lucide="{{ p.icon }}"></i></div>{% endif %}
+      <div class="ttl">{{ p.title }}</div>
+      <div class="desc">{{ p.desc }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

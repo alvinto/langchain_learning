@@ -1,0 +1,10 @@
+<section class="slide layout-callout tone-{{ slide.tone }}" data-page="{{ page_num }}">
+  <div class="callout">
+    <div class="ico"><i data-lucide="{{ slide.icon or {'info':'info','tip':'lightbulb','warn':'alert-triangle','danger':'shield-alert'}[slide.tone] }}"></i></div>
+    <div class="body">
+      <h3>{{ slide.title }}</h3>
+      <p>{{ slide.body }}</p>
+    </div>
+  </div>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

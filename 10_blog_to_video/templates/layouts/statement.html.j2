@@ -1,0 +1,4 @@
+<section class="slide layout-statement" data-page="{{ page_num }}">
+  <p class="text">{{ slide.text | hl(slide.highlights) }}</p>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

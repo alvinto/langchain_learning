@@ -25,3 +25,9 @@ ddgs>=6.0.0              # DuckDuckGo 兜底搜索，免 key
 trafilatura>=1.12.0      # URL → 正文抽取
 requests>=2.31.0         # fetch 同步兜底
 httpx>=0.27.0            # fetch async 主路径（researcher 真并行靠它）
+
+# 博客 → 视频（10 章用）
+edge-tts>=6.1.0          # 微软 Edge 浏览器 TTS 反向接口，免费、免 key、国内可达
+moviepy>=1.0.3           # PNG + mp3 → mp4 视频合成（ffmpeg 包装）
+playwright>=1.40.0       # 截图渲染 HTML 幻灯片（第一次跑要 `playwright install chromium`）
+jinja2>=3.1.0            # slides.html 模板

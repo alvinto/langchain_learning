@@ -1,0 +1,18 @@
+<section class="slide layout-pattern-card" data-page="{{ page_num }}">
+  <h2 class="pname">{{ slide.name }}</h2>
+  <div class="sections">
+    <div class="sec">
+      <h4>Context · 场景</h4>
+      <p>{{ slide.context }}</p>
+    </div>
+    <div class="sec">
+      <h4>Problem · 问题</h4>
+      <p>{{ slide.problem }}</p>
+    </div>
+    <div class="sec">
+      <h4>Solution · 方案</h4>
+      <p>{{ slide.solution }}</p>
+    </div>
+  </div>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

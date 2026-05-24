@@ -34,3 +34,10 @@ env/
 # 09_deep_research 生成的报告（保留目录，忽略输出）
 09_deep_research/reports/*
 !09_deep_research/reports/.gitkeep
+
+# 10_blog_to_video 生成产物（脚本/幻灯片/截图/音频/视频）
+10_blog_to_video/out/
+
+# MoviePy 写视频时的临时音频文件（崩溃时偶尔会漏在 cwd）
+*TEMP_MPY_wvf_snd*
+*.tempaudio.m4a

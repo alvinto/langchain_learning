@@ -1,0 +1,14 @@
+<section class="slide layout-timeline" data-page="{{ page_num }}">
+  <div class="accent-bar"></div>
+  <h2 class="h-title">{{ slide.title }}</h2>
+  <div class="steps">
+    {% for s in slide.steps %}
+    <div class="step">
+      <div class="dot">{{ loop.index }}</div>{# 这里 loop 是 steps 自己的 loop，OK #}
+      <div class="label">{{ s.label }}</div>
+      <div class="desc">{{ s.desc }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

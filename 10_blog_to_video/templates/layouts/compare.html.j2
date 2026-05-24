@@ -1,0 +1,17 @@
+<section class="slide layout-compare" data-page="{{ page_num }}">
+  <div class="accent-bar"></div>
+  <h2 class="h-title">{{ slide.title }}</h2>
+  <table>
+    <thead>
+      <tr>
+        {% for h in slide.headers %}<th>{{ h }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in slide.rows %}
+      <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

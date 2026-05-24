@@ -1,0 +1,16 @@
+<section class="slide layout-quadrant" data-page="{{ page_num }}">
+  <div class="accent-bar"></div>
+  <h2 class="h-title">{{ slide.title }}</h2>
+  <div class="matrix-wrap">
+    <div class="y-label">{{ slide.y_axis }} →</div>
+    <div class="matrix">
+      <div class="q tl">{{ slide.q_tl }}</div>
+      <div class="q tr">{{ slide.q_tr }}</div>
+      <div class="q bl">{{ slide.q_bl }}</div>
+      <div class="q br">{{ slide.q_br }}</div>
+    </div>
+    <div class="x-label-empty"></div>
+    <div class="x-label">{{ slide.x_axis }} →</div>
+  </div>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

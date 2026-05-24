@@ -1,0 +1,26 @@
+<section class="slide layout-code" data-page="{{ page_num }}">
+  {% if slide.title %}
+  <div class="accent-bar"></div>
+  <h2 class="h-title">{{ slide.title }}</h2>
+  {% endif %}
+  <div class="code-stage">
+    <div class="code-window">
+      <div class="titlebar">
+        <div class="dots">
+          <div class="dot dot-red"></div>
+          <div class="dot dot-yellow"></div>
+          <div class="dot dot-green"></div>
+        </div>
+        {% if slide.filename %}<div class="filename">{{ slide.filename }}</div>{% endif %}
+      </div>
+      <pre><code class="language-{{ slide.language }}">{{ slide.code }}</code></pre>
+    </div>
+    <div class="code-notes" aria-hidden="true">
+      <div class="note">Tool gateway</div>
+      <div class="note">Hook bus</div>
+      <div class="note">Context policy</div>
+      <div class="note">Error budget</div>
+    </div>
+  </div>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

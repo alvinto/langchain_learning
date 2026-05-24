@@ -1,0 +1,6 @@
+<section class="slide layout-stat-hero" data-page="{{ page_num }}">
+  <div class="number">{{ slide.number }}</div>
+  {% if slide.unit %}<div class="unit">{{ slide.unit }}</div>{% endif %}
+  <div class="caption">{{ slide.caption }}</div>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

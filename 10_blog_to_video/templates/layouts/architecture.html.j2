@@ -1,0 +1,15 @@
+<section class="slide layout-architecture" data-page="{{ page_num }}">
+  <div class="accent-bar"></div>
+  <h2 class="h-title">{{ slide.title }}</h2>
+  <div class="stack">
+    {% for L in slide.layers %}
+    <div class="layer">
+      <div class="lbl">{{ L.label }}</div>
+      <div class="items">
+        {% for it in L['items'] %}<div class="it">{{ it }}</div>{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>

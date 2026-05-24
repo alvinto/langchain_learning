@@ -1,0 +1,16 @@
+<section class="slide layout-cover" data-page="{{ page_num }}" data-total="{{ total_pages }}">
+  <div class="cover-kicker">AI SYSTEMS / FIELD NOTES</div>
+  <div class="accent-bar"></div>
+  <h1 class="h-title">{{ slide.title }}</h1>
+  {% if slide.subtitle %}<p class="subtitle">{{ slide.subtitle }}</p>{% endif %}
+  <div class="cover-metrics" aria-hidden="true">
+    <div class="metric">
+      <span class="value">10%</span>
+      <span class="label">model call</span>
+    </div>
+    <div class="metric active">
+      <span class="value">90%</span>
+      <span class="label">control system</span>
+    </div>
+  </div>
+</section>

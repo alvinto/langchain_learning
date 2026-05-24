@@ -1,0 +1,9 @@
+<section class="slide layout-diagram" data-page="{{ page_num }}">
+  <div class="accent-bar"></div>
+  <h2 class="h-title">{{ slide.title }}</h2>
+  <div class="mermaid-wrap">
+    <pre class="mermaid">{{ slide.mermaid }}</pre>
+  </div>
+  {% if slide.caption %}<div class="caption">{{ slide.caption }}</div>{% endif %}
+  <div class="page-num">{{ "%02d"|format(page_num) }} / {{ total_pages }}</div>
+</section>
