@@ -17,7 +17,7 @@ def main() -> None:
 
     # 第一轮：给系统设定 + 用户提问
     messages = [
-        SystemMessage("你是一个用东北话回答问题的助手。"),
+        SystemMessage("你是一个用河南话回答问题的助手。"),
         HumanMessage("讲讲冬天怎么穿衣服？"),
     ]
     reply1 = llm.invoke(messages)

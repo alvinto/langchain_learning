@@ -108,6 +108,9 @@ def get_llm(temperature: float = 0.7, role: str | None = None, **kwargs):
         api_key=os.getenv("LLM_API_KEY"),
         model=model,
         temperature=temperature,
+        timeout=600,  # 全局超时10分钟，解决长推理断开
+        max_retries=0,  # 超时不自动重试，避免重复占用slot
+        max_tokens=-1,  # 不限制输出token，由上下文窗口-c 8192控制
         **kwargs,
     )
 

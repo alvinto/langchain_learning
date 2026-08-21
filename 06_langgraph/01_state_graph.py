@@ -4,6 +4,7 @@
 - State：用 TypedDict 定义共享数据结构
 - Node：函数 (state) -> 部分 state 更新
 - Edge：节点间的连接（含条件边）
+- 从start state开始，沿着edge执行每个node，最终到end state结束
 """
 from __future__ import annotations
 import sys

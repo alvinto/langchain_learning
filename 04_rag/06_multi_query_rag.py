@@ -39,6 +39,7 @@ def main() -> None:
     )
 
     docs = multi_retriever.invoke("它有哪些主要部分？")
+    print(docs)
     print(f"\n合并后命中 {len(docs)} 段：")
     for i, d in enumerate(docs, 1):
         print(f"--- {i} ---\n{d.page_content[:120]}\n")

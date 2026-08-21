@@ -38,6 +38,9 @@ def demo_json_parser() -> None:
         ("system", "只返回 JSON，键为 city/temperature/condition"),
         ("human", "{q}"),
     ])
+    '''
+    这里的 | 不是 Python 原生位或运算符，是 LangChain 重写的魔法运算符，对应 Runnable 对象的管道，作用类似 Linux 的管道：把前一个组件的输出，作为后一个组件的输入。
+    '''
     chain = prompt | get_llm() | parser
     print(chain.invoke({"q": "今天北京天气怎么样？给一个示例 JSON"}))
 
@@ -45,6 +48,7 @@ def demo_json_parser() -> None:
 def demo_pydantic_parser() -> None:
     banner("PydanticOutputParser")
     parser = PydanticOutputParser(pydantic_object=Recipe)
+    ## 把需要输出的格式通过提示词给到模型
     prompt = ChatPromptTemplate.from_messages([
         ("system", "你是一个菜谱助手。\n{format_instructions}"),
         ("human", "给我一个 {dish} 的菜谱"),
