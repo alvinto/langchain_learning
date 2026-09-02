@@ -17,59 +17,59 @@
 - max_iterations 防止 supervisor 自己跟自己玩死循环
 - 每轮 ConductResearch 数量也截一下（一次开 50 个 researcher 没意义）
 """
-from __future__ import annotations
+from __future__ import annotations  # 启用 PEP 563 延迟注解
 
-import asyncio
-import sys
-from pathlib import Path
-from typing import Callable, Literal
+import asyncio  # 导入 asyncio 异步库
+import sys  # 导入 sys 标准库
+from pathlib import Path  # 导入 Path 处理路径
+from typing import Callable, Literal  # 导入 typing 类型注解
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.tools import tool
-from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage  # 导入消息类型 Human/AI/System
+from langchain_core.tools import tool  # 导入 @tool 装饰器
+from langgraph.graph import END, START, StateGraph  # 导入 LangGraph 图编排组件
+from pydantic import BaseModel, Field  # 导入 pydantic 数据校验
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 执行本行逻辑
 from _common import get_llm  # noqa: E402
 
-from researcher import arun_researcher
-from state import Finding, SupervisorState
+from researcher import arun_researcher  # 执行本行逻辑
+from state import Finding, SupervisorState  # 执行本行逻辑
 
 
-ProgressCallback = Callable[[str], None]
+ProgressCallback = Callable[[str], None]  # 赋值给 ProgressCallback
 
 
 # ============================================================
 # Supervisor 的工具 —— 不带逻辑，纯 schema
 # ============================================================
 
-class ConductResearch(BaseModel):
+class ConductResearch(BaseModel):  # 定义类
     """派一个 researcher 去研究指定的话题。"""
 
-    topic: str = Field(
-        description="要研究的具体子问题。粒度要够细（一个 researcher 一次能搞定），"
-        "不要太宽（"
-        "比如「分析 LangGraph」太宽，应该改成「LangGraph 的 Send API 解决了什么问题」）",
-    )
+    topic: str = Field(  # 赋值给 str
+        description="要研究的具体子问题。粒度要够细（一个 researcher 一次能搞定），"  # 执行本行逻辑
+        "不要太宽（"  # 字符串/template 参数
+        "比如「分析 LangGraph」太宽，应该改成「LangGraph 的 Send API 解决了什么问题」）",  # 字符串/template 参数
+    )  # 闭合括号/元组/字典
 
 
-class ResearchComplete(BaseModel):
+class ResearchComplete(BaseModel):  # 定义类
     """所有需要的信息都收集齐了，可以开始写报告。"""
 
 
-@tool(args_schema=ConductResearch)
-def conduct_research(topic: str) -> str:
+@tool(args_schema=ConductResearch)  # 声明 LangChain 工具
+def conduct_research(topic: str) -> str:  # 定义函数
     """Stub —— supervisor 调它实际上不会执行，由 supervisor_tools 节点截获。"""
-    return f"(队列中：{topic})"
+    return f"(队列中：{topic})"  # 返回结果
 
 
-@tool(args_schema=ResearchComplete)
-def research_complete() -> str:
+@tool(args_schema=ResearchComplete)  # 声明 LangChain 工具
+def research_complete() -> str:  # 定义函数
     """Stub —— 由 supervisor_tools 节点截获后路由到 END。"""
-    return "research complete"
+    return "research complete"  # 返回结果
 
 
-_TOOL_MAP = {"conduct_research": conduct_research, "research_complete": research_complete}
+_TOOL_MAP = {"conduct_research": conduct_research, "research_complete": research_complete}  # 赋值给 _TOOL_MAP
 
 
 # ============================================================
@@ -104,159 +104,159 @@ _SUPERVISOR_PROMPT = """你是研究项目的总指挥。你的任务：根据�
 # Supervisor 节点
 # ============================================================
 
-def _build_supervisor_subgraph(progress_cb: ProgressCallback | None):
+def _build_supervisor_subgraph(progress_cb: ProgressCallback | None):  # 定义函数
     """构建 supervisor 子图。progress_cb 通过闭包传给内部节点和 researcher。"""
 
-    llm = get_llm(temperature=0, role="smart").bind_tools(
-        [conduct_research, research_complete],
+    llm = get_llm(temperature=0, role="smart").bind_tools(  # 获取 ChatOpenAI 兼容 LLM
+        [conduct_research, research_complete],  # 链式/容器表达式续行
         tool_choice="any",  # 强制每轮必须调一个工具，不让它纯文本输出
-    )
+    )  # 闭合括号/元组/字典
 
-    async def supervisor_node(state: SupervisorState) -> dict:
+    async def supervisor_node(state: SupervisorState) -> dict:  # 定义异步函数
         """一轮 LLM 决策：派 N 个 researcher 或宣布完成。"""
-        iteration = state.get("iteration", 0)
-        max_iter = state.get("max_iterations", 3)
+        iteration = state.get("iteration", 0)  # 赋值给 iteration
+        max_iter = state.get("max_iterations", 3)  # 赋值给 max_iter
 
         # 第一轮才注入 system + user，后续轮 messages 会被 reducer 累加
-        msgs = state.get("supervisor_messages") or []
-        if not msgs:
-            msgs = [
-                SystemMessage(
-                    content=_SUPERVISOR_PROMPT.format(
-                        question=state["research_brief"],
-                        max_iterations=max_iter,
-                    )
-                ),
-                HumanMessage(content="请开始。"),
-            ]
-        elif iteration >= max_iter:
+        msgs = state.get("supervisor_messages") or []  # 赋值给 msgs
+        if not msgs:  # 代码块起始
+            msgs = [  # 赋值给 msgs
+                SystemMessage(  # 构造系统消息
+                    content=_SUPERVISOR_PROMPT.format(  # 执行本行逻辑
+                        question=state["research_brief"],  # 执行本行逻辑
+                        max_iterations=max_iter,  # 执行本行逻辑
+                    )  # 闭合括号/元组/字典
+                ),  # 闭合括号/元组/字典
+                HumanMessage(content="请开始。"),  # 构造用户消息
+            ]  # 闭合括号/元组/字典
+        elif iteration >= max_iter:  # elif 分支
             # 用完预算了，强行收尾
-            if progress_cb:
-                progress_cb(f"已达最大轮数 {max_iter}，强制收尾")
-            msgs = msgs + [
-                HumanMessage(
-                    content=f"已经研究了 {iteration} 轮。请立即调 research_complete 收尾，不要再派 researcher。"
-                )
-            ]
+            if progress_cb:  # 代码块起始
+                progress_cb(f"已达最大轮数 {max_iter}，强制收尾")  # 执行本行逻辑
+            msgs = msgs + [  # 赋值给 msgs
+                HumanMessage(  # 构造用户消息
+                    content=f"已经研究了 {iteration} 轮。请立即调 research_complete 收尾，不要再派 researcher。"  # 执行本行逻辑
+                )  # 闭合括号/元组/字典
+            ]  # 闭合括号/元组/字典
 
-        if progress_cb:
-            progress_cb(f"supervisor 决策 (第 {iteration + 1} 轮)")
+        if progress_cb:  # 代码块起始
+            progress_cb(f"supervisor 决策 (第 {iteration + 1} 轮)")  # 执行本行逻辑
 
-        ai = await llm.ainvoke(msgs)
-        return {
-            "supervisor_messages": ([] if state.get("supervisor_messages") else msgs) + [ai],
-            "iteration": iteration + 1,
-        }
+        ai = await llm.ainvoke(msgs)  # 等待异步结果
+        return {  # 返回结果
+            "supervisor_messages": ([] if state.get("supervisor_messages") else msgs) + [ai],  # 字符串/template 参数
+            "iteration": iteration + 1,  # 字符串/template 参数
+        }  # 闭合括号/元组/字典
 
-    async def supervisor_tools_node(state: SupervisorState) -> dict:
+    async def supervisor_tools_node(state: SupervisorState) -> dict:  # 定义异步函数
         """截获 supervisor 的 tool_calls：
         - conduct_research → asyncio.gather 并发跑 researcher
         - research_complete → 不做事，路由会把流程引到 END
         """
-        last = state["supervisor_messages"][-1]
-        if not isinstance(last, AIMessage) or not last.tool_calls:
-            return {}
+        last = state["supervisor_messages"][-1]  # 赋值给 last
+        if not isinstance(last, AIMessage) or not last.tool_calls:  # 代码块起始
+            return {}  # 返回结果
 
-        research_calls = [c for c in last.tool_calls if c["name"] == "conduct_research"]
-        complete_calls = [c for c in last.tool_calls if c["name"] == "research_complete"]
+        research_calls = [c for c in last.tool_calls if c["name"] == "conduct_research"]  # for 循环
+        complete_calls = [c for c in last.tool_calls if c["name"] == "research_complete"]  # for 循环
 
-        new_findings: list[Finding] = []
-        tool_messages: list[ToolMessage] = []
+        new_findings: list[Finding] = []  # 赋值给 list[Finding]
+        tool_messages: list[ToolMessage] = []  # 赋值给 list[ToolMessage]
 
         # === 并发执行所有 conduct_research ===
-        if research_calls:
-            topics = [c["args"].get("topic", "") for c in research_calls]
-            if progress_cb:
-                progress_cb(f"并行派出 {len(topics)} 名 researcher")
+        if research_calls:  # 代码块起始
+            topics = [c["args"].get("topic", "") for c in research_calls]  # for 循环
+            if progress_cb:  # 代码块起始
+                progress_cb(f"并行派出 {len(topics)} 名 researcher")  # 执行本行逻辑
 
-            results = await asyncio.gather(
-                *(
-                    arun_researcher(
-                        topic,
-                        progress_cb=_indented_cb(progress_cb, f"#{i + 1}"),
-                    )
-                    for i, topic in enumerate(topics)
-                ),
-                return_exceptions=True,
-            )
-            for call, topic, result in zip(research_calls, topics, results):
-                if isinstance(result, Exception):
-                    msg = f"[研究失败] {type(result).__name__}: {result}"
-                    if progress_cb:
-                        progress_cb(f"⚠ '{topic}' {msg}")
-                else:
-                    new_findings.append(result)
-                    msg = f"[研究完成] {topic}\nsummary: {result.summary[:500]}..."
-                tool_messages.append(ToolMessage(content=msg, tool_call_id=call["id"]))
+            results = await asyncio.gather(  # 等待异步结果
+                *(  # 执行本行逻辑
+                    arun_researcher(  # 执行本行逻辑
+                        topic,  # 序列/元组元素
+                        progress_cb=_indented_cb(progress_cb, f"#{i + 1}"),  # 执行本行逻辑
+                    )  # 闭合括号/元组/字典
+                    for i, topic in enumerate(topics)  # for 循环
+                ),  # 闭合括号/元组/字典
+                return_exceptions=True,  # 执行本行逻辑
+            )  # 闭合括号/元组/字典
+            for call, topic, result in zip(research_calls, topics, results):  # for 循环
+                if isinstance(result, Exception):  # 代码块起始
+                    msg = f"[研究失败] {type(result).__name__}: {result}"  # 赋值给 msg
+                    if progress_cb:  # 代码块起始
+                        progress_cb(f"⚠ '{topic}' {msg}")  # 执行本行逻辑
+                else:  # else 分支
+                    new_findings.append(result)  # 执行本行逻辑
+                    msg = f"[研究完成] {topic}\nsummary: {result.summary[:500]}..."  # 赋值给 msg
+                tool_messages.append(ToolMessage(content=msg, tool_call_id=call["id"]))  # 构造工具返回消息
 
         # === 处理 research_complete（如果有） ===
-        for call in complete_calls:
-            tool_messages.append(
-                ToolMessage(content="ok, proceeding to writer.", tool_call_id=call["id"])
-            )
+        for call in complete_calls:  # for 循环
+            tool_messages.append(  # 执行本行逻辑
+                ToolMessage(content="ok, proceeding to writer.", tool_call_id=call["id"])  # 构造工具返回消息
+            )  # 闭合括号/元组/字典
 
-        return {
-            "supervisor_messages": tool_messages,
-            "findings": new_findings,
-        }
+        return {  # 返回结果
+            "supervisor_messages": tool_messages,  # 字符串/template 参数
+            "findings": new_findings,  # 字符串/template 参数
+        }  # 闭合括号/元组/字典
 
-    def route_after_supervisor(state: SupervisorState) -> Literal["tools", "end"]:
-        last = state["supervisor_messages"][-1]
-        if not isinstance(last, AIMessage) or not last.tool_calls:
-            return "end"
-        return "tools"
+    def route_after_supervisor(state: SupervisorState) -> Literal["tools", "end"]:  # 定义函数
+        last = state["supervisor_messages"][-1]  # 赋值给 last
+        if not isinstance(last, AIMessage) or not last.tool_calls:  # 代码块起始
+            return "end"  # 返回结果
+        return "tools"  # 返回结果
 
-    def route_after_tools(state: SupervisorState) -> Literal["supervisor", "end"]:
-        last = state["supervisor_messages"][-1]
+    def route_after_tools(state: SupervisorState) -> Literal["supervisor", "end"]:  # 定义函数
+        last = state["supervisor_messages"][-1]  # 赋值给 last
         # 上一条 AIMessage（supervisor 决策）里有没有 research_complete？
-        for m in reversed(state["supervisor_messages"]):
-            if isinstance(m, AIMessage) and m.tool_calls:
-                if any(c["name"] == "research_complete" for c in m.tool_calls):
-                    return "end"
-                break
-        if state.get("iteration", 0) >= state.get("max_iterations", 3):
-            return "end"
-        return "supervisor"
+        for m in reversed(state["supervisor_messages"]):  # for 循环
+            if isinstance(m, AIMessage) and m.tool_calls:  # 代码块起始
+                if any(c["name"] == "research_complete" for c in m.tool_calls):  # for 循环
+                    return "end"  # 返回结果
+                break  # 跳出循环
+        if state.get("iteration", 0) >= state.get("max_iterations", 3):  # 代码块起始
+            return "end"  # 返回结果
+        return "supervisor"  # 返回结果
 
-    g = StateGraph(SupervisorState)
-    g.add_node("supervisor", supervisor_node)
-    g.add_node("tools", supervisor_tools_node)
-    g.add_edge(START, "supervisor")
-    g.add_conditional_edges("supervisor", route_after_supervisor, {"tools": "tools", "end": END})
-    g.add_conditional_edges("tools", route_after_tools, {"supervisor": "supervisor", "end": END})
-    return g.compile()
+    g = StateGraph(SupervisorState)  # 创建 LangGraph 状态图
+    g.add_node("supervisor", supervisor_node)  # 向图添加节点
+    g.add_node("tools", supervisor_tools_node)  # 向图添加节点
+    g.add_edge(START, "supervisor")  # 向图添加普通边
+    g.add_conditional_edges("supervisor", route_after_supervisor, {"tools": "tools", "end": END})  # 向图添加条件边
+    g.add_conditional_edges("tools", route_after_tools, {"supervisor": "supervisor", "end": END})  # 向图添加条件边
+    return g.compile()  # 编译图为可执行应用
 
 
-def _indented_cb(parent: ProgressCallback | None, prefix: str) -> ProgressCallback | None:
+def _indented_cb(parent: ProgressCallback | None, prefix: str) -> ProgressCallback | None:  # 定义函数
     """给 researcher 用的回调加个前缀，CLI 上能看出"是哪个 researcher 在说话"。"""
-    if parent is None:
-        return None
+    if parent is None:  # 代码块起始
+        return None  # 返回结果
 
-    def cb(msg: str) -> None:
-        parent(f"{prefix} {msg}")
+    def cb(msg: str) -> None:  # 定义函数
+        parent(f"{prefix} {msg}")  # 执行本行逻辑
 
-    return cb
+    return cb  # 返回结果
 
 
 # ============================================================
 # 顶层入口（被主图当作一个节点调）
 # ============================================================
 
-async def arun_supervisor(
-    research_brief: str,
-    progress_cb: ProgressCallback | None = None,
-    max_iterations: int = 3,
-) -> list[Finding]:
+async def arun_supervisor(  # 定义异步函数
+    research_brief: str,  # 执行本行逻辑
+    progress_cb: ProgressCallback | None = None,  # 赋值给 None
+    max_iterations: int = 3,  # 赋值给 int
+) -> list[Finding]:  # 代码块起始
     """跑完整 supervisor 流程，返回所有 findings。"""
-    sub = _build_supervisor_subgraph(progress_cb)
-    state = await sub.ainvoke(
-        {
-            "research_brief": research_brief,
-            "supervisor_messages": [],
-            "findings": [],
-            "iteration": 0,
-            "max_iterations": max_iterations,
-        },
+    sub = _build_supervisor_subgraph(progress_cb)  # 赋值给 sub
+    state = await sub.ainvoke(  # 等待异步结果
+        {  # 执行本行逻辑
+            "research_brief": research_brief,  # 字符串/template 参数
+            "supervisor_messages": [],  # 字符串/template 参数
+            "findings": [],  # 字符串/template 参数
+            "iteration": 0,  # 字符串/template 参数
+            "max_iterations": max_iterations,  # 字符串/template 参数
+        },  # 执行本行逻辑
         config={"recursion_limit": 50},  # 防 LangGraph 自己的 limit 提前 trip
-    )
-    return state.get("findings", [])
+    )  # 闭合括号/元组/字典
+    return state.get("findings", [])  # 返回结果

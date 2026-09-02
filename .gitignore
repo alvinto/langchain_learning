@@ -41,3 +41,5 @@ env/
 # MoviePy 写视频时的临时音频文件（崩溃时偶尔会漏在 cwd）
 *TEMP_MPY_wvf_snd*
 *.tempaudio.m4a
+
+.codegraph/

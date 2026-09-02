@@ -10,88 +10,88 @@ Tavily/DDG 的官方 SDK 都是同步的，所以我们用 asyncio.to_thread 把
 扔到默认线程池里跑——这是 Python async 世界里 wrap 同步 IO 的标准姿势，
 对调用方完全透明。
 """
-from __future__ import annotations
+from __future__ import annotations  # 启用 PEP 563 延迟注解
 
-import asyncio
-import os
-from dataclasses import dataclass
+import asyncio  # 导入 asyncio 异步库
+import os  # 导入 os 标准库
+from dataclasses import dataclass  # 导入 dataclass 相关工具
 
 
-@dataclass
-class SearchResult:
-    url: str
-    title: str
+@dataclass  # dataclass 装饰器
+class SearchResult:  # 定义类
+    url: str  # 执行本行逻辑
+    title: str  # 执行本行逻辑
     snippet: str   # 搜索引擎自己给的简短摘要
 
 
-async def asearch(query: str, k: int = 5) -> list[SearchResult]:
+async def asearch(query: str, k: int = 5) -> list[SearchResult]:  # 定义异步函数
     """统一搜索入口（异步）。"""
-    if os.getenv("TAVILY_API_KEY"):
-        try:
-            return await asyncio.to_thread(_tavily_sync, query, k)
-        except Exception as e:
-            print(f"[search] Tavily 失败，降级 DDG: {e}")
-    return await asyncio.to_thread(_ddg_sync, query, k)
+    if os.getenv("TAVILY_API_KEY"):  # 代码块起始
+        try:  # 代码块起始
+            return await asyncio.to_thread(_tavily_sync, query, k)  # 返回结果
+        except Exception as e:  # 捕获异常
+            print(f"[search] Tavily 失败，降级 DDG: {e}")  # 打印输出
+    return await asyncio.to_thread(_ddg_sync, query, k)  # 返回结果
 
 
 # ============================================================
 # 兼容老的同步入口（planner 没动，simple 模式还会调）
 # ============================================================
 
-def search(query: str, k: int = 5) -> list[SearchResult]:
+def search(query: str, k: int = 5) -> list[SearchResult]:  # 定义函数
     """同步入口（保留给非 async 调用者，比如 __main__ 自测）。"""
-    if os.getenv("TAVILY_API_KEY"):
-        try:
-            return _tavily_sync(query, k)
-        except Exception as e:
-            print(f"[search] Tavily 失败，降级 DDG: {e}")
-    return _ddg_sync(query, k)
+    if os.getenv("TAVILY_API_KEY"):  # 代码块起始
+        try:  # 代码块起始
+            return _tavily_sync(query, k)  # 返回结果
+        except Exception as e:  # 捕获异常
+            print(f"[search] Tavily 失败，降级 DDG: {e}")  # 打印输出
+    return _ddg_sync(query, k)  # 返回结果
 
 
 # ============================================================
 # 实际后端
 # ============================================================
 
-def _tavily_sync(query: str, k: int) -> list[SearchResult]:
-    from tavily import TavilyClient
+def _tavily_sync(query: str, k: int) -> list[SearchResult]:  # 定义函数
+    from tavily import TavilyClient  # 执行本行逻辑
 
-    client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
-    resp = client.search(query=query, max_results=k, search_depth="basic")
-    return [
-        SearchResult(
-            url=r.get("url", ""),
-            title=r.get("title", ""),
-            snippet=r.get("content", "")[:500],
-        )
-        for r in resp.get("results", [])
-    ]
+    client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])  # 赋值给 client
+    resp = client.search(query=query, max_results=k, search_depth="basic")  # 赋值给 resp
+    return [  # 返回结果
+        SearchResult(  # 执行本行逻辑
+            url=r.get("url", ""),  # 执行本行逻辑
+            title=r.get("title", ""),  # 执行本行逻辑
+            snippet=r.get("content", "")[:500],  # 执行本行逻辑
+        )  # 闭合括号/元组/字典
+        for r in resp.get("results", [])  # for 循环
+    ]  # 闭合括号/元组/字典
 
 
-def _ddg_sync(query: str, k: int) -> list[SearchResult]:
-    try:
-        from ddgs import DDGS
-    except ImportError:
+def _ddg_sync(query: str, k: int) -> list[SearchResult]:  # 定义函数
+    try:  # 代码块起始
+        from ddgs import DDGS  # 执行本行逻辑
+    except ImportError:  # 捕获异常
         from duckduckgo_search import DDGS  # type: ignore
 
-    out: list[SearchResult] = []
-    try:
-        with DDGS() as d:
-            for r in d.text(query, max_results=k):
-                out.append(
-                    SearchResult(
-                        url=r.get("href") or r.get("url", ""),
-                        title=r.get("title", ""),
-                        snippet=(r.get("body") or "")[:500],
-                    )
-                )
-    except Exception as e:
-        print(f"[search] DDG 也失败了: {e}")
-    return out
+    out: list[SearchResult] = []  # 赋值给 list[SearchResult]
+    try:  # 代码块起始
+        with DDGS() as d:  # with 上下文管理
+            for r in d.text(query, max_results=k):  # for 循环
+                out.append(  # 执行本行逻辑
+                    SearchResult(  # 执行本行逻辑
+                        url=r.get("href") or r.get("url", ""),  # 执行本行逻辑
+                        title=r.get("title", ""),  # 执行本行逻辑
+                        snippet=(r.get("body") or "")[:500],  # 执行本行逻辑
+                    )  # 闭合括号/元组/字典
+                )  # 闭合括号/元组/字典
+    except Exception as e:  # 捕获异常
+        print(f"[search] DDG 也失败了: {e}")  # 打印输出
+    return out  # 返回结果
 
 
-if __name__ == "__main__":
-    import sys
+if __name__ == "__main__":  # 脚本直接运行时执行 main
+    import sys  # 导入 sys 标准库
 
-    q = " ".join(sys.argv[1:]) or "deep research agent"
-    for i, r in enumerate(search(q, k=5), 1):
-        print(f"\n[{i}] {r.title}\n    {r.url}\n    {r.snippet[:120]}...")
+    q = " ".join(sys.argv[1:]) or "deep research agent"  # 赋值给 q
+    for i, r in enumerate(search(q, k=5), 1):  # for 循环
+        print(f"\n[{i}] {r.title}\n    {r.url}\n    {r.snippet[:120]}...")  # 打印输出

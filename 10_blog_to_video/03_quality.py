@@ -9,67 +9,67 @@
 
 这一步仍然发生在 HTML/PNG 阶段，比视频合成后返工便宜得多。
 """
-from __future__ import annotations
+from __future__ import annotations  # 启用 PEP 563 延迟注解
 
-import argparse
-import json
-import sys
-from pathlib import Path
-from typing import Any
+import argparse  # 导入 argparse 命令行解析
+import json  # 导入 json 标准库
+import sys  # 导入 sys 标准库
+from pathlib import Path  # 导入 Path 处理路径
+from typing import Any  # 导入 typing 类型注解
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将项目根目录加入模块搜索路径
 
-from _common import banner
+from _common import banner  # 导入项目共享 LLM/Embedding 配置
 
 
-def _wait_for_frontend_ready(page) -> None:
+def _wait_for_frontend_ready(page) -> None:  # 定义函数
     """等待模板里的前端增强完成，和 03_render.py 保持一致。"""
-    try:
-        page.wait_for_function(
-            "() => document.body.dataset.renderReady === 'true'", timeout=10_000
-        )
-    except Exception:
-        print("  [warn] 没收到 data-render-ready 标记，继续预检")
+    try:  # 代码块起始
+        page.wait_for_function(  # 执行本行逻辑
+            "() => document.body.dataset.renderReady === 'true'", timeout=10_000  # 字符串/template 参数
+        )  # 闭合括号/元组/字典
+    except Exception:  # 捕获异常
+        print("  [warn] 没收到 data-render-ready 标记，继续预检")  # 打印输出
 
-    try:
-        page.wait_for_function(
-            "() => document.querySelectorAll('i[data-lucide]').length === 0",
-            timeout=8_000,
-        )
-    except Exception:
-        print("  [warn] Lucide 图标可能未全部渲染，继续预检")
+    try:  # 代码块起始
+        page.wait_for_function(  # 执行本行逻辑
+            "() => document.querySelectorAll('i[data-lucide]').length === 0",  # 字符串/template 参数
+            timeout=8_000,  # 执行本行逻辑
+        )  # 闭合括号/元组/字典
+    except Exception:  # 捕获异常
+        print("  [warn] Lucide 图标可能未全部渲染，继续预检")  # 打印输出
 
-    try:
-        page.wait_for_function(
+    try:  # 代码块起始
+        page.wait_for_function(  # 执行本行逻辑
             """() => {
                 const all = document.querySelectorAll('.mermaid');
                 return all.length === 0 || Array.from(all).every(el => el.querySelector('svg'));
             }""",
-            timeout=15_000,
-        )
-    except Exception:
-        print("  [warn] Mermaid 图可能未全部渲染，继续预检")
+            timeout=15_000,  # 执行本行逻辑
+        )  # 闭合括号/元组/字典
+    except Exception:  # 捕获异常
+        print("  [warn] Mermaid 图可能未全部渲染，继续预检")  # 打印输出
 
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(400)  # 执行本行逻辑
 
 
-def inspect_html(html_path: Path, report_path: Path | None = None, strict: bool = False) -> dict[str, Any]:
+def inspect_html(html_path: Path, report_path: Path | None = None, strict: bool = False) -> dict[str, Any]:  # 定义函数
     """返回视觉预检报告。strict=True 时 warning 也会让 passed=false。"""
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright  # 执行本行逻辑
 
-    file_url = f"file://{html_path.resolve()}"
+    file_url = f"file://{html_path.resolve()}"  # 赋值给 file_url
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        ctx = browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            device_scale_factor=1,
-        )
-        page = ctx.new_page()
-        page.goto(file_url, wait_until="load")
-        _wait_for_frontend_ready(page)
+    with sync_playwright() as p:  # with 上下文管理
+        browser = p.chromium.launch()  # 赋值给 browser
+        ctx = browser.new_context(  # 赋值给 ctx
+            viewport={"width": 1920, "height": 1080},  # 执行本行逻辑
+            device_scale_factor=1,  # 执行本行逻辑
+        )  # 闭合括号/元组/字典
+        page = ctx.new_page()  # 赋值给 page
+        page.goto(file_url, wait_until="load")  # 执行本行逻辑
+        _wait_for_frontend_ready(page)  # 执行本行逻辑
 
-        slides = page.evaluate(
+        slides = page.evaluate(  # 赋值给 slides
             """
             () => {
               const CORE_SELECTORS = [
@@ -242,75 +242,75 @@ def inspect_html(html_path: Path, report_path: Path | None = None, strict: bool 
               });
             }
             """
-        )
-        browser.close()
+        )  # 闭合括号/元组/字典
+        browser.close()  # 执行本行逻辑
 
-    issue_count = sum(len(s["issues"]) for s in slides)
-    warning_count = sum(len(s["warnings"]) for s in slides)
-    report: dict[str, Any] = {
-        "html": str(html_path),
-        "strict": strict,
-        "passed": issue_count == 0 and (warning_count == 0 if strict else True),
-        "issue_count": issue_count,
-        "warning_count": warning_count,
-        "slides": slides,
-    }
+    issue_count = sum(len(s["issues"]) for s in slides)  # for 循环
+    warning_count = sum(len(s["warnings"]) for s in slides)  # for 循环
+    report: dict[str, Any] = {  # 赋值给 Any]
+        "html": str(html_path),  # 字符串/template 参数
+        "strict": strict,  # 字符串/template 参数
+        "passed": issue_count == 0 and (warning_count == 0 if strict else True),  # 字符串/template 参数
+        "issue_count": issue_count,  # 字符串/template 参数
+        "warning_count": warning_count,  # 字符串/template 参数
+        "slides": slides,  # 字符串/template 参数
+    }  # 闭合括号/元组/字典
 
-    if report_path:
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if report_path:  # 代码块起始
+        report_path.parent.mkdir(parents=True, exist_ok=True)  # 执行本行逻辑
+        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")  # 执行本行逻辑
 
-    return report
-
-
-def print_report(report: dict[str, Any]) -> None:
-    status = "通过" if report["passed"] else "未通过"
-    print(
-        f"  视觉预检{status}: {report['issue_count']} 个问题，"
-        f"{report['warning_count']} 个警告"
-    )
-    for slide in report["slides"]:
-        if not slide["issues"] and not slide["warnings"]:
-            continue
-        page = f"{slide['page']:02d}"
-        print(f"  - page {page} [{slide['layout']}]")
-        for issue in slide["issues"]:
-            print(f"    [fail] {issue}")
-        for warning in slide["warnings"]:
-            print(f"    [warn] {warning}")
+    return report  # 返回结果
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="幻灯片 HTML 视觉预检")
-    parser.add_argument(
-        "html",
-        nargs="?",
-        default="10_blog_to_video/out/slides.html",
-        help="slides.html 路径",
-    )
-    parser.add_argument(
-        "-o",
-        "--out",
-        default=None,
-        help="质量报告 JSON 输出路径，默认 <html_dir>/quality_report.json",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="warning 也视为失败",
-    )
-    args = parser.parse_args()
-
-    html_path = Path(args.html)
-    report_path = Path(args.out) if args.out else html_path.parent / "quality_report.json"
-
-    banner("10-3.5 HTML 视觉预检")
-    report = inspect_html(html_path, report_path=report_path, strict=args.strict)
-    print_report(report)
-    print(f"  报告：{report_path}")
-    if not report["passed"]:
-        raise SystemExit(1)
+def print_report(report: dict[str, Any]) -> None:  # 定义函数
+    status = "通过" if report["passed"] else "未通过"  # 赋值给 status
+    print(  # 打印输出
+        f"  视觉预检{status}: {report['issue_count']} 个问题，"  # 字符串/template 参数
+        f"{report['warning_count']} 个警告"  # 字符串/template 参数
+    )  # 闭合括号/元组/字典
+    for slide in report["slides"]:  # for 循环
+        if not slide["issues"] and not slide["warnings"]:  # 代码块起始
+            continue  # 跳过本次循环
+        page = f"{slide['page']:02d}"  # 赋值给 page
+        print(f"  - page {page} [{slide['layout']}]")  # 打印输出
+        for issue in slide["issues"]:  # for 循环
+            print(f"    [fail] {issue}")  # 打印输出
+        for warning in slide["warnings"]:  # for 循环
+            print(f"    [warn] {warning}")  # 打印输出
 
 
-if __name__ == "__main__":
-    main()
+def main() -> None:  # demo 入口函数
+    parser = argparse.ArgumentParser(description="幻灯片 HTML 视觉预检")  # 赋值给 parser
+    parser.add_argument(  # 执行本行逻辑
+        "html",  # 字符串/template 参数
+        nargs="?",  # 执行本行逻辑
+        default="10_blog_to_video/out/slides.html",  # 执行本行逻辑
+        help="slides.html 路径",  # 执行本行逻辑
+    )  # 闭合括号/元组/字典
+    parser.add_argument(  # 执行本行逻辑
+        "-o",  # 字符串/template 参数
+        "--out",  # 字符串/template 参数
+        default=None,  # 执行本行逻辑
+        help="质量报告 JSON 输出路径，默认 <html_dir>/quality_report.json",  # 执行本行逻辑
+    )  # 闭合括号/元组/字典
+    parser.add_argument(  # 执行本行逻辑
+        "--strict",  # 字符串/template 参数
+        action="store_true",  # 执行本行逻辑
+        help="warning 也视为失败",  # 执行本行逻辑
+    )  # 闭合括号/元组/字典
+    args = parser.parse_args()  # 赋值给 args
+
+    html_path = Path(args.html)  # 赋值给 html_path
+    report_path = Path(args.out) if args.out else html_path.parent / "quality_report.json"  # 赋值给 report_path
+
+    banner("10-3.5 HTML 视觉预检")  # 打印章节标题分隔条
+    report = inspect_html(html_path, report_path=report_path, strict=args.strict)  # 赋值给 report
+    print_report(report)  # 执行本行逻辑
+    print(f"  报告：{report_path}")  # 打印输出
+    if not report["passed"]:  # 代码块起始
+        raise SystemExit(1)  # 抛出异常
+
+
+if __name__ == "__main__":  # 脚本直接运行时执行 main
+    main()  # 调用 demo 主函数

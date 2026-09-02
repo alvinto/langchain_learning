@@ -1,0 +1,2371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LangChain 生态与底层原理 · 组内技术分享</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@300;400;500;600&family=Noto+Serif+SC:wght@300;400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ============ 主题色: 🍂 牛皮纸 ============ */
+    --ink:#2a1e13;
+    --ink-rgb:42,30,19;
+    --paper:#eedfc7;
+    --paper-rgb:238,223,199;
+    --paper-tint:#e0d0b6;
+    --ink-tint:#3a2a1d;
+
+    /* ============ 字体(跨主题固定) ============ */
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --serif-en:"Playfair Display","Source Serif 4",Georgia,serif;
+    --serif-body-en:"Source Serif 4",Georgia,serif;
+    --serif-zh:"Noto Serif SC",source-han-serif-sc,serif;
+    --sans-zh:"Noto Sans SC",source-han-sans-sc,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);font-family:var(--sans-zh);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+  /* ============ WebGL 双背景 ============ */
+  canvas.bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;display:block;transition:opacity 1.2s ease}
+  canvas#bg-light{opacity:0}
+  canvas#bg-dark{opacity:1}
+  body.light-bg canvas#bg-light{opacity:1}
+  body.light-bg canvas#bg-dark{opacity:0}
+  body.low-power canvas.bg{display:none!important}
+
+  /* ============ Deck 容器 + 翻页 ============ */
+  /* width: NSLIDES * 100vw，会在 JS 里动态矫正 */
+  #deck{position:fixed;inset:0;width:10000vw;height:100vh;display:flex;flex-wrap:nowrap;transition:transform .9s cubic-bezier(.77,0,.175,1);z-index:10;will-change:transform}
+  .slide{width:100vw;height:100vh;flex:0 0 100vw;position:relative;padding:6vh 6vw 10vh 6vw;display:flex;flex-direction:column;overflow:hidden}
+  .slide.light{color:var(--ink);background:var(--paper)}
+  .slide.dark{color:var(--paper);background:var(--ink)}
+
+  /* 默认页：遮罩较厚，保证文字可读 */
+  .slide::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;transition:background .7s ease}
+  .slide.light::before{background:rgba(var(--paper-rgb),.78);backdrop-filter:blur(3px)}
+  .slide.dark::before{background:rgba(var(--ink-rgb),.78);backdrop-filter:blur(3px)}
+  /* Hero 页：遮罩大幅降低，让 WebGL 背景明显透出 */
+  .slide.hero.light::before{background:rgba(var(--paper-rgb),.16);backdrop-filter:none}
+  .slide.hero.dark::before{background:rgba(var(--ink-rgb),.12);backdrop-filter:none}
+  /* Hero 页顶底微弱渐隐，保证 chrome/foot 区域可读 */
+  .slide.hero::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none}
+  .slide.hero.light::after{background:linear-gradient(180deg,rgba(var(--paper-rgb),.28) 0%,rgba(var(--paper-rgb),0) 14%,rgba(var(--paper-rgb),0) 86%,rgba(var(--paper-rgb),.28) 100%)}
+  .slide.hero.dark::after{background:linear-gradient(180deg,rgba(var(--ink-rgb),.32) 0%,rgba(var(--ink-rgb),0) 14%,rgba(var(--ink-rgb),0) 86%,rgba(var(--ink-rgb),.32) 100%)}
+
+  /* ============ Magazine chrome：顶部 meta + 底部 foot ============
+     （v1 布局 + v2 字号在此合并为唯一定义，不要在别处二次定义） */
+  .chrome{display:flex;justify-content:space-between;align-items:flex-start;font-family:var(--mono);font-size:max(11px,.78vw);letter-spacing:.2em;text-transform:uppercase;opacity:.62}
+  .chrome .left,.chrome .right{display:flex;gap:2.4em;align-items:center}
+  .chrome .sep{width:40px;height:1px;background:currentColor;opacity:.4}
+  .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;font-family:var(--mono);font-size:max(11px,.78vw);letter-spacing:.18em;text-transform:uppercase;opacity:.5}
+  .foot .title{font-family:var(--serif-zh);font-weight:400;letter-spacing:.05em;text-transform:none;opacity:.75;font-size:13px}
+
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;padding:6px 14px;border:1px solid currentColor;opacity:.85}
+  .rule{width:100%;height:1px;background:currentColor;opacity:.25;margin:3vh 0}
+  .rule.v{width:1px;height:100%;margin:0}
+
+  /* ============ 字体规则 ============
+     · 衬线（Noto Serif SC / Playfair）：大标题、重点金句、数字
+     · 非衬线（Noto Sans SC）：正文描述、body、补充说明
+     · 等宽（IBM Plex Mono）：kicker、meta 小标签、foot 右侧
+  */
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;opacity:.6;margin-bottom:2.6vh}
+  .display{font-family:var(--serif-en);font-weight:700;font-size:11vw;line-height:.92;letter-spacing:-.025em}
+  .display-zh{font-family:var(--serif-zh);font-weight:700;font-size:7.8vw;line-height:1.04;letter-spacing:-.005em}
+  .h1-zh{font-family:var(--serif-zh);font-weight:700;font-size:4.6vw;line-height:1.12;letter-spacing:-.005em}
+  .h2-zh{font-family:var(--serif-zh);font-weight:600;font-size:3.2vw;line-height:1.2;letter-spacing:0}
+  .h3-zh{font-family:var(--serif-zh);font-weight:500;font-size:1.9vw;line-height:1.35}
+  .body-zh{font-family:var(--sans-zh);font-weight:400;font-size:max(15px,1.22vw);line-height:1.75;opacity:.82;letter-spacing:.01em}
+  .body-serif{font-family:var(--serif-zh);font-weight:400;font-size:max(15px,1.3vw);line-height:1.65;opacity:.88}
+  .lead{font-family:var(--serif-zh);font-weight:400;font-size:1.75vw;line-height:1.5;opacity:.86}
+  .meta{font-family:var(--mono);font-size:max(11px,.88vw);letter-spacing:.16em;text-transform:uppercase;opacity:.6}
+  .big-num{font-family:var(--serif-en);font-weight:800;font-size:10vw;line-height:.85;letter-spacing:-.03em;font-feature-settings:"tnum"}
+  .mid-num{font-family:var(--serif-en);font-weight:700;font-size:5.5vw;line-height:.88;letter-spacing:-.02em;font-feature-settings:"tnum"}
+  .ghost{font-family:var(--serif-en);font-weight:900;font-size:34vw;line-height:.8;opacity:.06;letter-spacing:-.04em;position:absolute;font-feature-settings:"tnum"}
+  em{font-style:italic;font-family:var(--serif-en)}
+  .en{font-family:var(--serif-en);font-style:italic;font-weight:500}
+
+  /* ============ 布局工具 ============ */
+  .col{display:flex;flex-direction:column;gap:2.4vh}
+  .row{display:flex;align-items:center;gap:3vw}
+  .grid-6{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:4vw 6vw;flex:1;align-content:center;padding:2vh 0}
+  .grid-9{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:3vh 4vw;flex:1;align-content:center}
+  .grid-4{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:4vh 6vw;flex:1;align-content:center}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:4vw;flex:1;align-content:center}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:4vw;flex:1;align-items:center}
+  .split-55{display:grid;grid-template-columns:55fr 45fr;gap:5vw;flex:1;align-items:stretch}
+  .fill{flex:1}
+  .center{align-items:center;justify-content:center;text-align:center}
+  .bottom-left{position:absolute;left:6vw;bottom:9vh;max-width:50vw}
+  .bottom-right{position:absolute;right:6vw;bottom:9vh;max-width:50vw;text-align:right}
+  .top-right{position:absolute;right:6vw;top:6vh;text-align:right}
+
+  /* ============ Stat（数字矩阵） ============ */
+  .stat{display:flex;flex-direction:column;gap:1vh;align-items:flex-start}
+  .stat .n{font-family:var(--serif-en);font-weight:800;font-size:8vw;line-height:.88;letter-spacing:-.03em;font-feature-settings:"tnum"}
+  .stat .l{font-family:var(--sans-zh);font-size:max(13px,1.05vw);opacity:.7;margin-top:1vh;font-weight:400;line-height:1.5}
+  .stat .m{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.5;margin-bottom:.2vh}
+
+  /* ============ Callout（引用框） ============ */
+  .callout{padding:3vh 2.4vw;border-left:3px solid currentColor;position:relative;font-family:var(--serif-zh);font-size:max(15px,1.2vw);line-height:1.55;opacity:.92}
+  .slide.light .callout{background:rgba(var(--ink-rgb),.05)}
+  .slide.dark .callout{background:rgba(var(--paper-rgb),.06)}
+  .callout .cite{display:block;margin-top:1.6vh;font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.6}
+  .callout .q-big{font-family:var(--serif-zh);font-weight:600;font-size:max(17px,1.6vw);line-height:1.42}
+
+  /* ============ Platform（平台卡） ============ */
+  .plat{display:flex;flex-direction:column;justify-content:flex-end;padding:2vh 0;border-top:1px solid currentColor;border-color:rgba(127,127,127,.35)}
+  .plat .name{font-family:var(--serif-zh);font-weight:700;font-size:1.8vw;margin-bottom:.6vh}
+  .plat .nb{font-family:var(--serif-en);font-weight:700;font-size:3.2vw;letter-spacing:-.02em;line-height:1;font-feature-settings:"tnum"}
+  .plat .sub{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.55;margin-top:.6vh}
+  .plat .fill{font-family:var(--sans-zh);font-weight:300;font-size:2.4vw;opacity:.28;letter-spacing:-.01em;line-height:1}
+
+  /* ============ Rowline（表格行） ============ */
+  .rowline{display:grid;grid-template-columns:1fr 2fr 1fr;gap:2vw;padding:2.2vh 0;border-top:1px solid currentColor;align-items:center;border-color:rgba(127,127,127,.25)}
+  .rowline:last-child{border-bottom:1px solid currentColor;border-color:rgba(127,127,127,.25)}
+  .rowline .k{font-family:var(--serif-zh);font-weight:700;font-size:1.7vw}
+  .rowline .v{font-family:var(--sans-zh);font-weight:400;font-size:max(14px,1.2vw);opacity:.85;line-height:1.55}
+  .rowline .m{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.6;justify-self:end}
+
+  /* ============ Pillar（支柱卡片） ============ */
+  .pillar{display:flex;flex-direction:column;gap:1.8vh}
+  .pillar .ic{font-family:var(--serif-en);font-style:italic;font-size:2.6vw;opacity:.45;font-weight:400}
+  .pillar .ic svg{width:2.8vw;height:2.8vw;stroke-width:1.2;opacity:.7}
+  .pillar .t{font-family:var(--serif-zh);font-weight:700;font-size:2.4vw;line-height:1.1}
+  .pillar .d{font-family:var(--sans-zh);font-weight:400;font-size:max(14px,1.1vw);opacity:.76;line-height:1.6}
+
+  /* ============ Signature / Highlight ============ */
+  .sign{font-family:var(--serif-en);font-style:italic;font-weight:500;font-size:2vw;opacity:.7}
+  .hi{position:relative;display:inline}
+  .slide.dark .hi::after{content:"";position:absolute;left:-.1em;right:-.1em;bottom:-.05em;height:.28em;background:rgba(var(--paper-rgb),.15);z-index:-1}
+  .slide.light .hi::after{content:"";position:absolute;left:-.1em;right:-.1em;bottom:-.05em;height:.28em;background:rgba(var(--ink-rgb),.08);z-index:-1}
+
+  /* ============ Icons（Lucide via CDN） ============ */
+  .ico{width:1em;height:1em;display:inline-block;vertical-align:-.12em;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+  .ico-lg,.ico-md,.ico-sm{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+  .ico-lg{width:2.6vw;height:2.6vw;stroke-width:1.2;display:inline-block}
+  .ico-md{width:1.8vw;height:1.8vw;stroke-width:1.3;display:inline-block;vertical-align:-.4em}
+  .ico-sm{width:1.1vw;height:1.1vw;stroke-width:1.4;display:inline-block;vertical-align:-.15em;opacity:.7}
+
+  /* ============ 图片占位（虚线框，提示设计师位置） ============ */
+  .img-slot{border:1.5px dashed rgba(127,127,127,.4);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1vh;padding:2vh 2vw;font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;opacity:.55;position:relative;aspect-ratio:16/9;width:100%;max-height:56vh;margin-inline:auto;box-sizing:border-box}
+  .img-slot::before{content:"";position:absolute;inset:8px;border:1px solid currentColor;opacity:.2}
+  .img-slot .plus{font-size:2vw;font-weight:300;opacity:.5;letter-spacing:0}
+  .img-slot .label{position:relative;z-index:2;text-align:center}
+  .img-slot.r-4x3{aspect-ratio:4/3}
+  .img-slot.r-3x2{aspect-ratio:3/2}
+  .img-slot.r-1x1{aspect-ratio:1/1}
+
+  /* ============ 图片实填框（关键：固定高度 + 只裁底部） ============
+     重要约束：高度用内联 height:Nvh 精确控制，不要用 aspect-ratio（会撑破布局）
+     object-position:top center 保证严禁裁剪顶部和左右，只裁剪底部
+  */
+  .frame-img{overflow:hidden;position:relative;background:rgba(0,0,0,.04);box-sizing:border-box;width:100%;border-radius:4px}
+  .slide.dark .frame-img{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12)}
+  .frame-img > img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+  .frame-img.fit-contain > img{object-fit:contain;object-position:center center}
+  .frame-img.r-16x9{aspect-ratio:16/9;max-height:64vh}
+  .frame-img.r-16x10{aspect-ratio:16/10;max-height:56vh}
+  .frame-img.r-4x3{aspect-ratio:4/3;max-height:56vh}
+  .frame-img.r-3x2{aspect-ratio:3/2;max-height:46vh}
+  .frame-img.r-3x4{aspect-ratio:3/4;max-height:60vh}
+  .frame-img.r-1x1{aspect-ratio:1/1;max-height:50vh}
+  .frame-img.h-16{height:16vh}
+  .frame-img.h-18{height:18vh}
+  .frame-img.h-22{height:22vh}
+  .frame-img.h-26{height:26vh}
+  .frame-img.h-28{height:28vh}
+  .frame-cap{display:flex;justify-content:space-between;align-items:baseline;gap:1vw;margin-top:.8vh;font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.72}
+  .frame-cap .pf{font-family:var(--serif-zh);font-weight:600;font-size:max(13px,1vw);letter-spacing:.04em;text-transform:none;opacity:.94}
+  .frame-cap .nb{font-family:var(--serif-en);font-style:italic;font-size:max(15px,1.2vw);letter-spacing:.02em;text-transform:none;opacity:.88}
+  .frame-cap .idx{font-family:var(--mono);opacity:.5}
+  figure.tile{display:flex;flex-direction:column;margin:0;min-width:0}
+  figure.tile > .frame-img{flex:0 0 auto}
+
+  /* ============ 导航 ============ */
+  #nav{position:fixed;left:50%;bottom:2.6vh;transform:translateX(-50%);z-index:30;display:flex;gap:10px;padding:8px 14px;border-radius:999px;background:rgba(0,0,0,.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  #nav .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer;transition:all .3s ease;border:0;padding:0}
+  #nav .dot:hover{background:rgba(255,255,255,.5);transform:scale(1.15)}
+  #nav .dot.active{background:rgba(255,255,255,.95);width:22px;border-radius:999px}
+  body.light-bg #nav{background:rgba(255,255,255,.25)}
+  body.light-bg #nav .dot{background:rgba(var(--ink-rgb),.25)}
+  body.light-bg #nav .dot.active{background:rgba(var(--ink-rgb),.9)}
+  #hint{position:fixed;bottom:3vh;right:3vw;z-index:30;display:flex;align-items:center;gap:.65em;font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;opacity:.4;mix-blend-mode:difference;color:#aaa}
+  #hint button{all:unset;display:inline-flex;align-items:center;gap:.45em;cursor:pointer;color:inherit;white-space:nowrap}
+  #hint button:hover,#hint button:focus-visible{opacity:1;text-decoration:underline;text-underline-offset:.35em}
+  #hint .ppt-key{padding:.16em .38em;border:1px solid currentColor;border-radius:3px;letter-spacing:.08em}
+  #hint .ppt-sep{opacity:.55}
+  body.low-power #hint{opacity:.72;color:var(--paper);mix-blend-mode:normal}
+  body.light-bg.low-power #hint{color:var(--ink)}
+
+  /* ============ 演讲者模式 ============ */
+  body.ppt-audience #hint,body.ppt-audience #nav,
+  body.ppt-preview #hint,body.ppt-preview #nav{display:none!important}
+  body.ppt-audience{cursor:none}
+  body.ppt-preview{pointer-events:none}body.ppt-preview #deck{transition:none!important}
+  body.ppt-presenter>#deck,body.ppt-presenter>#nav,body.ppt-presenter>#hint,
+  body.ppt-presenter>.bg{visibility:hidden}
+  #ppt-presenter{position:fixed;inset:0;z-index:90;display:none;min-width:0;min-height:0;overflow:hidden;background:#101216;color:#f5f6f7;font-family:Inter,"Noto Sans SC",sans-serif}
+  body.ppt-presenter #ppt-presenter{display:grid;grid-template-rows:auto 1fr auto}
+  .ppt-presenter-top{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 24px;border-bottom:1px solid #2b2e35;background:#15181d}
+  .ppt-presenter-brand{font-weight:650;letter-spacing:.02em}.ppt-presenter-meta{display:flex;align-items:center;gap:12px;color:#aeb4be;font-size:14px}
+  .ppt-sync{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #363a43;border-radius:999px;color:#d2d6dc;background:#1b1e24}
+  .ppt-sync::before{content:"";width:8px;height:8px;border-radius:50%;background:#818894}
+  .ppt-sync[data-state="synced"]::before{background:#72df99;box-shadow:0 0 0 4px rgba(114,223,153,.12)}
+  .ppt-sync[data-state="connecting"]::before,.ppt-sync[data-state="frozen"]::before{background:#f0c766}.ppt-sync[data-state="unsynced"]::before,.ppt-sync[data-state="blocked"]::before{background:#ff9e64}.ppt-sync[data-state="disconnected"]::before{background:#ff6b72}
+  .ppt-ui-btn{appearance:none;border:1px solid #3a3e48;background:#20242a;color:#f6f7f8;border-radius:8px;padding:9px 13px;font:600 14px/1 Inter,"Noto Sans SC",sans-serif;cursor:pointer}
+  .ppt-ui-btn:hover{background:#2a2f37;border-color:#525864}.ppt-ui-btn:focus-visible{outline:2px solid #84a8ff;outline-offset:2px}.ppt-ui-btn:disabled{opacity:.28;cursor:not-allowed}
+  .ppt-presenter-main{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(300px,.75fr);gap:18px;min-height:0;padding:18px 24px}
+  .ppt-preview-stack{position:relative;display:grid;grid-template-rows:minmax(0,1fr) clamp(132px,22vh,210px);gap:16px;min-width:0;min-height:0}
+  .ppt-stage-card,.ppt-notes-card,.ppt-presenter-overview{background:#171a20;border:1px solid #2b2f37;border-radius:12px;overflow:hidden}
+  .ppt-stage-card{display:grid;grid-template-rows:auto minmax(0,1fr);min-width:0;min-height:0}
+  .ppt-stage-label{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;color:#aeb4be;font-size:13px;border-bottom:1px solid #292d34}
+  .ppt-annotation-tools{display:flex;align-items:center;gap:5px;margin-left:auto}.ppt-annotation-tools .ppt-ui-btn{padding:6px 9px;font-size:12px}.ppt-annotation-tools .ppt-ui-btn.is-active{color:#111318;background:#ff5b63;border-color:#ff5b63}.ppt-annotation-tools .ppt-grid-btn.is-active{color:#111318;background:#edf1f5;border-color:#edf1f5}.ppt-annotation-tools .ppt-clear-btn{min-width:0}.ppt-grid-btn{display:inline-flex;align-items:center;gap:6px}.ppt-grid-icon{display:grid;grid-template-columns:repeat(2,4px);gap:2px}.ppt-grid-icon i{width:4px;height:4px;background:currentColor}
+  .ppt-frame-viewport{position:relative;display:grid;place-items:center;min-width:0;min-height:0;overflow:hidden;background:#08090b}
+  .ppt-frame{display:block;width:0;height:0;max-width:100%;max-height:100%;aspect-ratio:16/9;border:0;background:#08090b}.ppt-next-frame{opacity:.86}#ppt-next-card.is-end .ppt-frame{visibility:hidden}#ppt-next-card.is-end .ppt-frame-viewport::after{content:"演示结束";position:absolute;color:#727a86;font:650 14px/1 Inter,"Noto Sans SC",sans-serif;letter-spacing:.08em}
+  .ppt-annotation-layer{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;width:0;height:0;pointer-events:none;touch-action:none}.ppt-annotation-layer.is-active{pointer-events:auto;cursor:crosshair}
+  #ppt-audience-ink{position:fixed;inset:0;z-index:70;width:100vw;height:100vh;pointer-events:none}#ppt-audience-cover{position:fixed;inset:0;z-index:80;display:none;pointer-events:none}#ppt-audience-cover.is-ended{display:grid!important;place-items:center;background:#101216!important;color:#f5f6f7;font:650 clamp(24px,3vw,46px)/1.2 Inter,"Noto Sans SC",sans-serif;letter-spacing:.08em}
+  .ppt-preview-stack.is-overview>.ppt-stage-card{display:none}.ppt-presenter-overview{grid-row:1/-1;display:grid;grid-template-rows:auto minmax(0,1fr);min-width:0;min-height:0}.ppt-presenter-overview[hidden]{display:none}.ppt-overview-head{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;border-bottom:1px solid #292d34}.ppt-overview-head strong{font-size:15px}.ppt-overview-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-content:start;overflow:auto;padding:14px}.ppt-overview-page{appearance:none;min-height:112px;display:grid;grid-template-rows:auto 1fr auto;gap:12px;padding:13px;border:1px solid #343943;border-radius:10px;background:#111318;color:#eef1f4;text-align:left;cursor:pointer}.ppt-overview-page:hover{background:#1d2128;border-color:#636b78}.ppt-overview-page.is-current{border-color:#84a8ff;box-shadow:inset 0 0 0 1px #84a8ff}.ppt-overview-page-no{color:#8f97a3;font:600 12px/1 var(--mono,monospace)}.ppt-overview-page-title{font-size:14px;font-weight:650;line-height:1.35}.ppt-overview-page-meta{display:flex;justify-content:space-between;gap:8px;color:#7f8793;font-size:11px}
+  .ppt-notes-card{display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0}.ppt-notes-head{padding:16px 18px;border-bottom:1px solid #292d34}.ppt-notes-label{margin-bottom:6px;color:#848c98;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.ppt-notes-title{font-size:21px;font-weight:680;line-height:1.32}.ppt-purpose-block{margin-top:14px;padding:11px 12px;border-left:3px solid #84a8ff;background:#111318}.ppt-purpose-copy{color:#c9ced6;font-size:14px;line-height:1.55}.ppt-notes-draft-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:15px;padding-top:13px;border-top:1px solid #2d3139}.ppt-notes-draft-head .ppt-notes-label{margin:0 0 4px}.ppt-note-meta{color:#8f97a3;font-size:12px}
+  .ppt-notes-tools{display:flex;align-items:center;gap:6px}.ppt-notes-tools .ppt-ui-btn{padding:7px 9px}.ppt-note-editor{width:100%;height:100%;min-height:0;resize:none;border:0;outline:0;background:#171a20;color:#edf0f3;padding:18px;font:400 var(--ppt-note-size,17px)/1.72 Inter,"Noto Sans SC",sans-serif}.ppt-note-editor:focus{box-shadow:inset 0 0 0 1px #3d4654}
+  .ppt-saved{color:#72df99;white-space:nowrap}.ppt-presenter-bottom{display:grid;grid-template-columns:minmax(330px,1fr) auto minmax(110px,1fr);align-items:center;gap:20px;padding:12px 24px;border-top:1px solid #2b2e35;background:#15181d}
+  .ppt-time-dashboard{display:flex;align-items:stretch;min-width:0}.ppt-time-stat{min-width:90px;display:grid;align-content:center;gap:4px;padding:0 16px}.ppt-time-stat:first-child{padding-left:0}.ppt-time-stat+.ppt-time-stat{border-left:1px solid #343943}.ppt-time-label{color:#89919d;font-size:11px;font-weight:700;letter-spacing:.1em}.ppt-time-value{color:#f7f8fa;font:650 23px/1 var(--mono,monospace);font-variant-numeric:tabular-nums}.ppt-time-hint{color:#747c88;font-size:11px;white-space:nowrap}.ppt-time-stat.is-over .ppt-time-label,.ppt-time-stat.is-over .ppt-time-value{color:#ff8a90}.ppt-time-stat.is-remaining .ppt-time-value{color:#72df99}
+  .ppt-control-stack{display:grid;gap:7px;justify-items:center}.ppt-controls,.ppt-session-actions{display:flex;align-items:center;justify-content:center;gap:7px}.ppt-controls .ppt-ui-btn,.ppt-session-actions .ppt-ui-btn{min-width:68px}.ppt-session-actions{padding-top:7px;border-top:1px solid #343943}.ppt-rehearsal-on{color:#ff8a90}.ppt-page-state{text-align:right}.ppt-page-state strong{display:block;color:#fff;font-size:17px;margin-bottom:5px}.ppt-page-state span{color:#8f97a3;font:600 13px/1 var(--mono,monospace)}.ppt-auto-state{display:inline-flex;align-items:center;gap:6px;border-radius:999px}.ppt-auto-state.is-on{color:#72df99;border-color:rgba(114,223,153,.45);background:rgba(114,223,153,.08)}.ppt-auto-state.is-paused{color:#f0c766;border-color:rgba(240,199,102,.42);background:rgba(240,199,102,.08)}
+  #ppt-presenter[data-layout="slides"] .ppt-presenter-main{grid-template-columns:minmax(0,2.15fr) minmax(260px,.58fr)}#ppt-presenter[data-layout="notes"] .ppt-presenter-main{grid-template-columns:minmax(0,1.15fr) minmax(380px,1fr)}
+  .ppt-dialog{position:fixed;inset:0;z-index:130;display:grid;place-items:center;padding:24px;background:rgba(4,6,9,.72);backdrop-filter:blur(10px)}.ppt-dialog[hidden]{display:none}.ppt-dialog-panel{width:min(720px,calc(100vw - 48px));max-height:min(760px,calc(100vh - 48px));display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden;border:1px solid #343943;border-radius:14px;background:#171a20;box-shadow:0 24px 80px rgba(0,0,0,.45)}.ppt-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;border-bottom:1px solid #2b2f37}.ppt-dialog-title{font-size:20px;font-weight:700}.ppt-dialog-body{overflow:auto;padding:18px;color:#d8dce2;font-size:14px;line-height:1.6}.ppt-dialog-section+.ppt-dialog-section{margin-top:22px}.ppt-dialog-section h3{margin:0 0 10px;color:#fff;font-size:15px}.ppt-dialog-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ppt-dialog-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid #282c33}.ppt-dialog-row:last-child{border-bottom:0}.ppt-field{display:grid;gap:6px}.ppt-field label{color:#aeb4be;font-size:12px}.ppt-field input{width:100%;border:1px solid #3a3e48;border-radius:8px;background:#101216;color:#fff;padding:9px 10px;font:600 14px Inter,sans-serif}.ppt-check{display:flex;align-items:flex-start;gap:10px}.ppt-check-dot{width:9px;height:9px;margin-top:7px;border-radius:50%;background:#ff6b72}.ppt-check.is-ok .ppt-check-dot{background:#72df99}.ppt-check.is-warn .ppt-check-dot{background:#f0c766}.ppt-summary{width:100%;border-collapse:collapse;font-size:13px}.ppt-summary th,.ppt-summary td{padding:9px 8px;border-bottom:1px solid #2b2f37;text-align:left}.ppt-summary th{color:#9fa6b1;font-weight:600}.ppt-summary td:last-child,.ppt-summary th:last-child{text-align:right}.ppt-muted{color:#8f96a1}.ppt-shortcuts{display:grid;grid-template-columns:auto 1fr;gap:8px 14px}.ppt-shortcuts kbd{min-width:44px;padding:4px 7px;border:1px solid #3a3e48;border-radius:6px;background:#101216;color:#fff;text-align:center;font:600 12px var(--mono,monospace)}
+  .ppt-settings-card{padding:15px;border:1px solid #30353e;border-radius:12px;background:#12151a}.ppt-settings-card+.ppt-settings-card{margin-top:12px}.ppt-settings-card h3{margin:0 0 3px}.ppt-settings-copy{margin:0 0 14px;color:#858d99;font-size:12px}.ppt-switch-row{display:flex;align-items:center;justify-content:space-between;gap:18px;cursor:pointer}.ppt-switch-row input{position:absolute;opacity:0;pointer-events:none}.ppt-switch{width:48px;height:28px;flex:0 0 auto;padding:3px;border:1px solid #434955;border-radius:999px;background:#252a31;transition:.2s}.ppt-switch::after{content:"";display:block;width:20px;height:20px;border-radius:50%;background:#a8afb9;transition:.2s}.ppt-switch-row input:checked+.ppt-switch{border-color:#72df99;background:rgba(114,223,153,.16)}.ppt-switch-row input:checked+.ppt-switch::after{transform:translateX(20px);background:#72df99}.ppt-stepper{display:grid;grid-template-columns:38px minmax(72px,1fr) auto 38px;align-items:center;margin-top:14px;border:1px solid #363c46;border-radius:10px;background:#0d0f13;overflow:hidden}.ppt-stepper button{height:42px;border:0;background:#20242a;color:#fff;font-size:19px;cursor:pointer}.ppt-stepper button:hover{background:#2c323b}.ppt-stepper input{width:100%;height:42px;border:0!important;border-radius:0!important;background:transparent!important;text-align:center;font:650 16px var(--mono,monospace)!important;-moz-appearance:textfield}.ppt-stepper input::-webkit-inner-spin-button,.ppt-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.ppt-stepper-unit{color:#858d99;font-size:12px}.ppt-segmented{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.ppt-segmented.screen{grid-template-columns:repeat(4,1fr)}.ppt-segmented .ppt-ui-btn{min-width:0}.ppt-settings-save{width:100%;margin-top:14px;background:#edf1f5;color:#111318;border-color:#edf1f5}.ppt-settings-save:hover{background:#fff}.ppt-settings-save+.ppt-settings-copy{margin:10px 0 0}
+  #overview{z-index:110!important}
+  @media(max-width:1200px){.ppt-presenter-main{grid-template-columns:minmax(0,1.55fr) minmax(280px,.72fr)}}
+  @media(max-width:1100px){.ppt-presenter-bottom{grid-template-columns:minmax(292px,1fr) auto minmax(86px,.6fr);gap:12px}.ppt-time-stat{min-width:82px;padding:0 11px}.ppt-time-value{font-size:20px}.ppt-controls .ppt-ui-btn,.ppt-session-actions .ppt-ui-btn{min-width:60px;padding:8px 9px}}
+  @media(max-width:900px){.ppt-presenter-top{padding:12px 16px;flex-wrap:wrap}.ppt-presenter-top .ppt-presenter-meta{gap:6px}.ppt-presenter-top .ppt-ui-btn{padding:8px 9px}.ppt-presenter-main,#ppt-presenter[data-layout="slides"] .ppt-presenter-main,#ppt-presenter[data-layout="notes"] .ppt-presenter-main{grid-template-columns:minmax(0,1.45fr) minmax(250px,.72fr);gap:12px;padding:12px 16px}.ppt-preview-stack{gap:12px;grid-template-rows:minmax(0,1fr) clamp(104px,20vh,150px)}.ppt-saved{display:none}.ppt-presenter-bottom{grid-template-columns:minmax(270px,1fr) auto 74px;gap:8px;padding:9px 16px}.ppt-time-stat{min-width:0;padding:0 9px}.ppt-time-value{font-size:18px}.ppt-time-hint{max-width:78px;overflow:hidden;text-overflow:ellipsis}.ppt-controls,.ppt-session-actions{gap:5px}.ppt-controls .ppt-ui-btn,.ppt-session-actions .ppt-ui-btn{min-width:52px;padding:7px 8px;font-size:12px}.ppt-page-state strong{font-size:14px}.ppt-dialog-grid{grid-template-columns:1fr}.ppt-segmented.screen{grid-template-columns:repeat(2,1fr)}}
+  @media(max-height:700px){.ppt-presenter-top{padding-top:10px;padding-bottom:10px}.ppt-presenter-main{padding-top:10px;padding-bottom:10px}.ppt-preview-stack{grid-template-rows:minmax(0,1fr) clamp(88px,16vh,118px);gap:10px}.ppt-stage-label{padding:7px 10px}.ppt-notes-head{padding:12px 14px}.ppt-purpose-block{margin-top:10px;padding:8px 10px}.ppt-notes-draft-head{margin-top:10px;padding-top:9px}.ppt-presenter-bottom{padding-top:8px;padding-bottom:8px}.ppt-control-stack{gap:5px}.ppt-session-actions{padding-top:5px}}
+  /* ============ /演讲者模式 ============ */
+
+  /* ============================================================
+     ============ LAYOUTS API · 面向 agent 的类（v2）============
+     所有 layouts.md 中的骨架都基于下面这套命名。
+     如果你在 layouts.md 里看到某个类，它必须在下面有定义。
+     ============================================================ */
+
+  /* ---------- .frame：每页主内容容器 ---------- */
+  .frame{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  /* 当 .frame 同时加了 grid 类时，grid 的 display:grid 覆盖 flex */
+  .frame.grid-2-7-5,
+  .frame.grid-2-6-6,
+  .frame.grid-2-8-4,
+  .frame.grid-3-3,
+  .frame.grid-6{display:grid}
+
+  /* ---------- 标题层级（API 名称，衬线为主） ---------- */
+  .h-hero{
+    font-family:var(--serif-zh);
+    font-weight:900;
+    font-size:10vw;
+    line-height:.96;
+    letter-spacing:-.02em;
+  }
+  .h-xl{
+    font-family:var(--serif-zh);
+    font-weight:700;
+    font-size:6.2vw;
+    line-height:1.08;
+    letter-spacing:-.01em;
+  }
+  .h-sub{
+    font-family:var(--serif-zh);
+    font-weight:500;
+    font-size:3.1vw;
+    line-height:1.25;
+    letter-spacing:0;
+    opacity:.7;
+  }
+  .h-md{
+    font-family:var(--serif-zh);
+    font-weight:600;
+    font-size:2.3vw;
+    line-height:1.3;
+  }
+  /* 英文标题专用（Playfair 衬线） */
+  .h-hero-en,.h-xl-en{font-family:var(--serif-en);letter-spacing:-.025em}
+
+  /* ---------- lead 引语：定义见上方“字体规则”区块（已合并，勿重复定义） ---------- */
+
+  /* ---------- meta-row 底部元数据 ---------- */
+  .meta-row{
+    display:flex;
+    gap:1.2em;
+    align-items:baseline;
+    flex-wrap:wrap;
+    font-family:var(--mono);
+    font-size:max(12px,.92vw);
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+
+  /* ---------- stat-card（数据大字报用） ---------- */
+  .stat-card{
+    display:flex;
+    flex-direction:column;
+    gap:.8vh;
+    align-items:flex-start;
+    padding-top:1.6vh;
+    border-top:1px solid currentColor;
+    border-color:rgba(127,127,127,.3);
+  }
+  .stat-card .stat-label{
+    font-family:var(--mono);
+    font-size:max(10px,.78vw);
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    opacity:.55;
+  }
+  .stat-card .stat-nb{
+    font-family:var(--serif-en);
+    font-weight:800;
+    font-size:5.8vw;
+    line-height:.9;
+    letter-spacing:-.03em;
+    font-feature-settings:"tnum";
+    margin-top:.4vh;
+  }
+  .stat-card .stat-nb .stat-unit{
+    font-family:var(--serif-zh);
+    font-weight:500;
+    font-size:.38em;
+    letter-spacing:0;
+    opacity:.72;
+    margin-left:.14em;
+  }
+  .stat-card .stat-note{
+    font-family:var(--sans-zh);
+    font-weight:400;
+    font-size:max(13px,1.05vw);
+    line-height:1.5;
+    opacity:.72;
+    margin-top:.6vh;
+  }
+  /* 当 stat-card 用于 grid-4（2x2），数字适度放大；若页面有标题+引文在上方，可内联 style 覆盖为更小值 */
+  .grid-4 .stat-card .stat-nb{font-size:5vw}
+  /* 当只有 3 个，字也可以稍大 */
+  .grid-3 .stat-card .stat-nb{font-size:6.8vw}
+
+  /* ---------- pipeline（流水线） ---------- */
+  .pipeline-section{
+    margin-top:4.4vh;
+    padding-top:2.8vh;
+    border-top:1px dashed rgba(127,127,127,.32);
+  }
+  .pipeline-section:first-of-type{
+    border-top:0;
+    padding-top:0;
+    margin-top:3vh;
+  }
+  .pipeline-label{
+    font-family:var(--mono);
+    font-size:max(11px,.85vw);
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    opacity:.62;
+    margin-bottom:2.2vh;
+  }
+  .pipeline{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:1.2vw;
+  }
+  .pipeline[data-cols="3"]{grid-template-columns:repeat(3,1fr)}
+  .pipeline[data-cols="4"]{grid-template-columns:repeat(4,1fr)}
+  .pipeline[data-cols="6"]{grid-template-columns:repeat(6,1fr)}
+  .step{
+    display:flex;
+    flex-direction:column;
+    gap:.8vh;
+    padding-top:1.4vh;
+    border-top:1px solid currentColor;
+    border-color:rgba(127,127,127,.35);
+  }
+  .step-nb{
+    font-family:var(--serif-en);
+    font-style:italic;
+    font-weight:500;
+    font-size:1.15vw;
+    opacity:.45;
+  }
+  .step-title{
+    font-family:var(--sans-zh);
+    font-weight:700;
+    font-size:1.55vw;
+    letter-spacing:.01em;
+    line-height:1.2;
+  }
+  .step-desc{
+    font-family:var(--sans-zh);
+    font-weight:400;
+    font-size:max(12px,.95vw);
+    line-height:1.45;
+    opacity:.72;
+  }
+
+  /* ---------- 网格（layouts.md 所用） ---------- */
+  /* 这些类独立挂到任何容器上都能生效，不依赖 .frame 复合选择器 */
+  .grid-2-7-5{display:grid;grid-template-columns:7fr 5fr;gap:3vw 4vh;align-items:start}
+  .grid-2-6-6{display:grid;grid-template-columns:1fr 1fr;gap:3vw 4vh;align-items:start}
+  .grid-2-8-4{display:grid;grid-template-columns:8fr 4fr;gap:3vw 4vh;align-items:start}
+  .grid-3-3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    grid-auto-rows:minmax(0,1fr);
+    gap:2.4vh 2vw;
+  }
+  /* grid-6 已在旧样式里定义为 3x2，这里仅补 align */
+
+  /* ---------- 图片 frame-img（layouts.md 主命名） ---------- */
+  /* 在旧样式里已定义，这里补 img-cap 命名别名与增强 */
+  figure.frame-img{margin:0;display:flex;flex-direction:column;min-width:0}
+  /* 有图注时:图片弹性收缩,图注收进固定高度/比例框内部,
+     否则 img 的 height:100% 会把 figcaption 挤出 overflow:hidden 裁掉 */
+  figure.frame-img:has(> .img-cap) > img{flex:1 1 auto;min-height:0;height:auto}
+  .img-cap{
+    display:block;
+    flex:0 0 auto;
+    padding:.7vh .9em .9vh;
+    font-family:var(--mono);
+    font-size:max(10px,.8vw);
+    letter-spacing:.22em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+  /* callout src 命名别名 */
+  .callout-src{
+    display:block;
+    margin-top:1.6vh;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+
+  /* ---------- chrome & foot：定义见上方“Magazine chrome”区块（已合并，勿重复定义） ---------- */
+
+  /* ============ 动效系统(Motion One 驱动) ============
+     所有 [data-anim] 元素默认隐藏,进入页面时由 JS 逐个揭示。
+     - cascade(默认):按 DOM 顺序 stagger 120ms 淡入 + y:16→0
+     - hero(hero 页自动):慢一点的 stagger 180ms
+     - quote(含 [data-anim="line"]):逐行 600ms 淡入
+     - directional(含 [data-anim="left|right"]):左→分隔线→右
+     - pipeline(data-animate="pipeline"):Space/→ 手动推进
+     Motion One 没加载成功时(CDN 断 + 本地丢),所有 [data-anim] 会兜底显示。
+  */
+  [data-anim]{opacity:1}
+  body.motion-ready [data-anim]{opacity:0}
+  body.motion-ready [data-anim="left"]{transform:translateX(-24px)}
+  body.motion-ready [data-anim="right"]{transform:translateX(24px)}
+  body.motion-ready [data-anim="line"]{opacity:0;transform:translateY(10px)}
+  body.motion-ready [data-animate="pipeline"] [data-anim]{opacity:.15}
+  body.low-power #deck{transition:none!important}
+  body.low-power *,
+  body.low-power *::before,
+  body.low-power *::after{animation:none!important;transition:none!important}
+  body.low-power.motion-ready [data-anim],
+  body.low-power [data-anim]{opacity:1!important;transform:none!important}
+  /* ESC 索引缩略图：克隆的 slide 不经过动效播放，强制显示所有待动画元素 */
+  #overview [data-anim]{opacity:1!important;transform:none!important}
+
+  /* ---------- 紧凑页 + 架构图 ---------- */
+  .slide-compact{padding:4vh 5vw 8vh 5vw}
+  .slide-compact .frame{flex:1;display:flex;flex-direction:column;min-height:0;padding-top:1vh}
+  .slide-compact .kicker{margin-bottom:1.2vh;font-size:11px}
+  .slide-compact .h-xl{font-size:4vw;line-height:1.12;margin-bottom:1vh}
+  .slide-compact .lead{font-size:max(14px,1.15vw);line-height:1.45;margin-bottom:1vh}
+  .diag-box{width:100%;border:1px solid rgba(var(--ink-rgb),.18);background:rgba(var(--ink-rgb),.03);padding:1.2vh 1vw;flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+  .d-box{fill:currentColor;fill-opacity:.07;stroke:currentColor;stroke-width:1.2}
+  .diag-box svg .d-box,.diag-box svg .d-box-hi,.diag-box svg .d-box-store{fill:var(--paper);fill-opacity:1;stroke:currentColor}
+  .diag-box svg .d-box-hi{fill:var(--paper-tint)}
+  .d-box-hi{fill:currentColor;fill-opacity:.12;stroke:currentColor;stroke-width:1.35}
+  .d-box-store{fill:currentColor;fill-opacity:.04;stroke:currentColor;stroke-width:1.5}
+  .slide.dark .diag-box{border-color:rgba(var(--paper-rgb),.2);background:rgba(var(--paper-rgb),.05)}
+  .diag-box svg{width:100%;height:auto;max-height:52vh;display:block}
+  .diag-box.sm svg{max-height:38vh}
+  .diag-cap{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.55;margin-top:.6vh}
+  .bullets-compact{display:flex;flex-direction:column;gap:.9vh;font-family:var(--sans-zh);font-size:max(13px,1.05vw);line-height:1.45;opacity:.88}
+  .bullets-compact li{margin-left:1.1em}
+  .grid-2-diag{display:grid;grid-template-columns:1fr 1fr;gap:2.5vw;flex:1;min-height:0;align-items:stretch}
+  .grid-2-asym{display:grid;grid-template-columns:4fr 6fr;gap:2.5vw;flex:1;min-height:0;align-items:stretch}
+  .grid-2-asym-v{display:grid;grid-template-columns:1fr 1fr;gap:2.5vw 3vw;flex:0 0 auto;align-items:start}
+  .diag-box.fit svg{max-height:34vh}
+  .pain-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8vh 2vw;margin-top:.6vh}
+  .slide-cover{padding:3vh 5vw 7vh 5vw}
+  .slide-cover .frame.cover-split{display:grid;grid-template-columns:1fr 1fr;gap:3vw;flex:1;min-height:0;align-items:center;align-content:center;padding-top:0}
+  .slide-cover .cover-main{display:flex;flex-direction:column;gap:1.5vh;justify-content:center;min-width:0}
+  .slide-cover .cover-main .h-hero{font-size:5.4vw!important;line-height:1.06!important}
+  .slide-cover .cover-main .lead{font-size:max(13px,1.02vw);line-height:1.4;max-width:none}
+  .slide-cover .cover-main .kicker{margin-bottom:.6vh}
+  .slide-cover .cover-main .meta-row{font-size:max(11px,.8vw)}
+  .cover-split{display:grid;grid-template-columns:1fr 1fr;gap:3vw;flex:1;min-height:0;align-items:center;align-content:center}
+  .cover-main{display:flex;flex-direction:column;gap:1.5vh;justify-content:center;min-width:0}
+  .cover-toc{border-left:1px solid rgba(var(--ink-rgb),.18);padding:1vh 0 1vh 2vw;display:flex;flex-direction:column;gap:.8vh;justify-content:center;min-height:0;align-self:stretch}
+  .cover-toc .toc-head{font-family:var(--mono);font-size:10px;letter-spacing:.26em;text-transform:uppercase;opacity:.55;margin-bottom:.2vh}
+  .toc-list{list-style:none;display:flex;flex-direction:column;gap:1vh;margin:0;padding:0}
+  .toc-item{display:grid;grid-template-columns:2em 1fr;gap:.5vw;align-items:start;font-family:var(--sans-zh);font-size:max(12px,.98vw);line-height:1.38}
+  .toc-n{font-family:var(--mono);font-size:10px;letter-spacing:.08em;opacity:.45;padding-top:.12em}
+  .toc-item strong{font-family:var(--serif-zh);font-weight:600;font-size:max(13px,1.05vw);display:block;margin-bottom:.1vh}
+  .toc-sub{font-size:max(11px,.84vw);opacity:.72;line-height:1.32;margin-top:.2vh;padding-left:.2em;border-left:1px solid rgba(var(--ink-rgb),.12)}
+  .slide-dense .grid-2-asym{align-items:start}
+  .slide-dense .grid-2-asym .diag-box{max-height:34vh;padding:.8vh .8vw}
+  .slide-dense .grid-2-asym .diag-box svg{max-height:32vh}
+  .slide-dense .h-xl{font-size:3.4vw;margin-bottom:.4vh}
+  .slide-dense .bullets-compact{gap:.55vh;font-size:max(12px,.92vw)}
+  .slide-dense pre{font-size:max(8px,.62vw)!important;line-height:1.4!important;padding:.8vh .8vw!important;margin-top:.4vh!important}
+  /* ---------- 第四章 LangGraph：左文右图，一页一能力 ---------- */
+  .sec4-split.frame{flex:1;min-height:0}
+  .sec4-split .sec4-text{display:flex;flex-direction:column;gap:.7vh;min-width:0;justify-content:center}
+  .sec4-split .sec4-text .bullets-compact{gap:.55vh;font-size:max(12px,.92vw)}
+  .sec4-split .sec4-text pre{font-family:var(--mono);font-size:max(7.5px,.58vw);line-height:1.35;padding:.65vh .7vw;background:rgba(42,30,19,.06);white-space:pre-wrap;margin:.4vh 0 0}
+  .sec4-split .sec4-diag{display:flex;flex-direction:column;min-height:0;min-width:0;justify-content:center}
+  .sec4-split .sec4-diag .diag-label{font-family:var(--mono);font-size:9px;letter-spacing:.06em;opacity:.55;margin:0 0 .4vh}
+  .sec4-split .sec4-diag .diag-box{flex:0 0 auto;max-height:none;padding:.8vh .9vw}
+  .sec4-split .sec4-diag .diag-box svg{width:100%;height:auto;max-height:44vh;display:block}
+  [data-slide-id^="sec4-"] .h-xl{font-size:3.4vw;margin-bottom:.45vh;line-height:1.12}
+  .sec4-compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:2.5vw;flex:1;min-height:0;align-items:start;margin-top:1vh}
+  .sec4-compare-grid .cap-block{padding:1.2vh 1vw;border-top:2px solid currentColor}
+  .sec4-compare-grid .cap-block .t{font-family:var(--serif-zh);font-weight:700;font-size:max(14px,1.08vw);margin-bottom:.35vh}
+  .sec4-compare-grid .cap-block .d{font-size:max(11px,.86vw);opacity:.78;line-height:1.42}
+  .mod-card{padding:1.6vh 1.4vw;border-top:2px solid currentColor;display:flex;flex-direction:column;gap:.6vh}
+  .mod-card .name{font-family:var(--serif-zh);font-weight:700;font-size:max(15px,1.25vw)}
+  .mod-card .role{font-family:var(--mono);font-size:10px;letter-spacing:.14em;opacity:.55;text-transform:uppercase}
+  .mod-card .desc{font-family:var(--sans-zh);font-size:max(12px,.95vw);line-height:1.45;opacity:.78}
+  .cat-table{display:flex;flex-direction:column;gap:0;flex:1;min-height:0;overflow:hidden}
+  .cat-row{display:grid;grid-template-columns:1fr 1.6fr 1.4fr;gap:1.5vw;padding:.85vh 0;border-top:1px solid rgba(var(--ink-rgb),.14);align-items:start;font-size:max(11px,.82vw);line-height:1.38}
+  .slide.dark .cat-row{border-color:rgba(var(--paper-rgb),.14)}
+  .cat-row.head{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;opacity:.52;padding-bottom:.4vh}
+  .cat-row .cat{font-family:var(--serif-zh);font-weight:600;font-size:max(12px,.9vw)}
+  .grid-3-diag{display:grid;grid-template-columns:repeat(3,1fr);gap:2vw;flex:1;min-height:0;align-items:stretch}
+
+  /* ---------- 响应式降级 ---------- */
+  @media (max-width:900px){
+    .display{font-size:16vw}
+    .display-zh{font-size:12vw}
+    .h1-zh{font-size:7vw}
+    .h-hero{font-size:14vw}
+    .h-xl{font-size:9vw}
+    .pipeline{grid-template-columns:repeat(2,1fr)}
+    .grid-2-7-5,.grid-2-6-6,.grid-2-8-4{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<script>
+  (function(){
+    const KEY = 'guizang-ppt-low-power';
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const stored = localStorage.getItem(KEY);
+    window.__lowPowerMode = stored === '1' || (stored === null && reduced);
+    function updateHint(){
+      const label = document.querySelector('.ppt-low-power-label');
+      if(label) label.textContent = window.__lowPowerMode ? '动态' : '静态';
+    }
+    window.__setLowPowerMode = function(on, opts={}){
+      window.__lowPowerMode = !!on;
+      document.body.classList.toggle('low-power', window.__lowPowerMode);
+      if(opts.persist !== false) localStorage.setItem(KEY, window.__lowPowerMode ? '1' : '0');
+      if(window.__lowPowerMode && document.getAnimations){
+        document.getAnimations().forEach(a=>a.cancel());
+      }
+      updateHint();
+      dispatchEvent(new CustomEvent('ppt-low-power-change', {detail:{on:window.__lowPowerMode}}));
+      if(window.__playSlide) window.__playSlide(window.__currentSlideIndex || 0);
+    };
+    document.body.classList.toggle('low-power', window.__lowPowerMode);
+    addEventListener('DOMContentLoaded', updateHint, {once:true});
+  })();
+</script>
+
+<canvas id="bg-dark" class="bg"></canvas>
+<canvas id="bg-light" class="bg"></canvas>
+<div id="hint" role="toolbar" aria-label="快捷控制">
+  <span>← → 翻页</span><span class="ppt-sep">·</span>
+  <button id="ppt-low-power-btn" type="button"><span class="ppt-key">B</span><span class="ppt-low-power-label">静态</span></button><span class="ppt-sep">·</span>
+  <button id="ppt-overview-btn" type="button"><span class="ppt-key">ESC</span>总览</button><span class="ppt-sep">·</span>
+  <button id="ppt-presenter-btn" type="button"><span class="ppt-key">P</span>演讲模式</button>
+</div>
+
+<div id="deck">
+
+<!-- 01 Cover -->
+<section class="slide hero light slide-compact slide-cover" data-slide-id="cover">
+  <div class="chrome"><div>组内技术分享 · 2026.08</div><div>Vol.02</div></div>
+  <div class="frame cover-split">
+    <div class="cover-main">
+      <div class="kicker" data-anim>LangChain Ecosystem</div>
+      <h1 class="h-hero" data-anim>LangChain<br>生态与原理</h1>
+      <p class="lead" data-anim>组内技术分享 · LangChain 与 LangGraph</p>
+      <div class="meta-row" data-anim><span>牛皮纸笔记</span><span>·</span><span>langchain_learning</span></div>
+    </div>
+    <nav class="cover-toc" aria-label="目录" data-anim>
+      <div class="toc-head">Contents · 目录</div>
+      <ol class="toc-list">
+        <li class="toc-item">
+          <span class="toc-n">01</span>
+          <div><strong>LangChain 是什么</strong>定位 · 工程痛点 · 解决什么问题</div>
+        </li>
+        <li class="toc-item">
+          <span class="toc-n">02</span>
+          <div><strong>产品矩阵</strong>core · LangChain · LangGraph · LangSmith</div>
+        </li>
+        <li class="toc-item">
+          <span class="toc-n">03</span>
+          <div>
+            <strong>LangChain</strong>
+            <div class="toc-sub">3.1 组件架构 · Categories / Ecosystem / Patterns</div>
+            <div class="toc-sub">3.2 四大模式 · Chaining / Routing / Tool / Reflection</div>
+          </div>
+        </li>
+        <li class="toc-item">
+          <span class="toc-n">04</span>
+          <div><strong>LangGraph</strong>StateGraph · ReAct · Checkpoint · HITL · 选型</div>
+        </li>
+      </ol>
+    </nav>
+  </div>
+  <div class="foot"><div>架构图 + 流程图为主</div><div>— 2026 —</div></div>
+</section>
+
+<!-- 02 §1 Divider -->
+<section class="slide hero light slide-compact" data-slide-id="sec1-divider">
+  <div class="chrome"><div>第一章</div><div>01 / 19</div></div>
+  <div class="frame" style="display:grid;gap:4vh;align-content:center;min-height:82vh">
+    <div class="kicker" data-anim>Chapter 01</div>
+    <h1 class="h-hero" style="font-size:8vw" data-anim>LangChain<br>是什么</h1>
+    <p class="lead" style="max-width:50vw" data-anim>解决 AI 应用从 Demo 到生产之间的工程鸿沟</p>
+  </div>
+  <div class="foot"><div>§1 · 定位与问题</div><div>— · —</div></div>
+</section>
+
+<!-- 03 §1 What & Problems -->
+<section class="slide light slide-compact" data-slide-id="sec1-problems">
+  <div class="chrome"><div>§1 · 定位</div><div>02 / 19</div></div>
+  <div class="frame" style="gap:1.2vh">
+    <div class="grid-2-asym-v">
+      <div>
+        <div class="kicker" data-anim>What & Why</div>
+        <h2 class="h-xl" data-anim>LangChain 是什么</h2>
+        <p class="lead" data-anim>开源的 Agent / LLM 应用开发框架（<code style="font-family:var(--mono);font-size:.9em">langchain</code> 等 pip 包）：统一模型与组件抽象，LCEL 可组合流水线。</p>
+        <p style="font-family:var(--mono);font-size:10px;opacity:.55;margin-top:.3vh" data-anim>LangSmith 等为可选商业平台 · 复杂状态编排见 LangGraph</p>
+      </div>
+      <div class="pain-grid bullets-compact" data-anim>
+        <div><strong>痛点 1</strong> — 各厂商 API 差异大，换模型成本高</div>
+        <div><strong>痛点 2</strong> — RAG / Tool / Memory 每次从零拼装</div>
+        <div><strong>痛点 3</strong> — Agent 循环、分支、恢复无统一范式</div>
+        <div><strong>痛点 4</strong> — 缺观测与调试，生产难运维</div>
+      </div>
+    </div>
+    <p style="font-family:var(--mono);font-size:10px;opacity:.5" data-anim>→ 提供组件 + 编排 + 可观测性</p>
+    <div class="diag-box fit" data-anim style="margin-top:.4vh">
+      <svg viewBox="0 0 880 220" xmlns="http://www.w3.org/2000/svg" aria-label="问题到方案" preserveAspectRatio="xMidYMid meet">
+        <defs><marker id="arr-s1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="currentColor" opacity=".75"/></marker></defs>
+        <!-- 对比层 -->
+        <rect x="24" y="8" width="300" height="72" rx="2" class="d-box"/>
+        <text x="174" y="34" text-anchor="middle" font-family="Noto Sans SC" font-size="14" font-weight="700">裸 LLM API</text>
+        <text x="174" y="52" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" opacity=".65">单次调用 · 无工具 · 无记忆</text>
+        <text x="174" y="68" text-anchor="middle" font-family="Noto Sans SC" font-size="11" opacity=".75">Demo 快 · 生产难</text>
+        <line x1="324" y1="44" x2="400" y2="44" stroke="currentColor" stroke-width="1.3" marker-end="url(#arr-s1)"/>
+        <text x="362" y="36" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" opacity=".55">框架层</text>
+        <rect x="400" y="8" width="300" height="72" rx="2" class="d-box-hi"/>
+        <text x="550" y="34" text-anchor="middle" font-family="Noto Sans SC" font-size="14" font-weight="700">LangChain 应用</text>
+        <text x="550" y="52" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" opacity=".65">RAG · Agent · Memory</text>
+        <text x="550" y="68" text-anchor="middle" font-family="Noto Sans SC" font-size="11" opacity=".75">可组合 · 可观测 · 可部署</text>
+        <!-- 鸿沟 -->
+        <rect x="24" y="92" width="832" height="36" rx="2" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" opacity=".4"/>
+        <text x="440" y="108" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" letter-spacing="2">PRODUCTION GAP · 集成 · 编排 · 调试 · 部署</text>
+        <!-- 组件层 -->
+        <rect x="80" y="142" width="140" height="32" rx="2" class="d-box"/><text x="150" y="162" text-anchor="middle" font-size="11">Models</text>
+        <rect x="250" y="142" width="140" height="32" rx="2" class="d-box"/><text x="320" y="162" text-anchor="middle" font-size="11">Tools</text>
+        <rect x="420" y="142" width="140" height="32" rx="2" class="d-box"/><text x="490" y="162" text-anchor="middle" font-size="11">Retrieval</text>
+        <rect x="590" y="142" width="140" height="32" rx="2" class="d-box"/><text x="660" y="162" text-anchor="middle" font-size="11">Agent</text>
+        <line x1="150" y1="174" x2="150" y2="182" stroke="currentColor" opacity=".35"/>
+        <line x1="320" y1="174" x2="320" y2="182" stroke="currentColor" opacity=".35"/>
+        <line x1="490" y1="174" x2="490" y2="182" stroke="currentColor" opacity=".35"/>
+        <line x1="660" y1="174" x2="660" y2="182" stroke="currentColor" opacity=".35"/>
+        <line x1="150" y1="182" x2="660" y2="182" stroke="currentColor" opacity=".35"/>
+        <line x1="440" y1="182" x2="440" y2="192" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr-s1)"/>
+        <rect x="280" y="192" width="320" height="24" rx="2" class="d-box-hi"/>
+        <text x="440" y="208" text-anchor="middle" font-family="Noto Sans SC" font-size="11" font-weight="600">LangChain 统一抽象层</text>
+      </svg>
+    </div>
+    <div class="diag-cap">Fig 1 · 工程鸿沟 → 组件化方案</div>
+  </div>
+  <div class="foot"><div>§1 · LangChain 定位</div><div>02 / 19</div></div>
+</section>
+
+<!-- 04 §2 Divider -->
+<section class="slide hero light slide-compact" data-slide-id="sec2-divider">
+  <div class="chrome"><div>第二章</div><div>03 / 19</div></div>
+  <div class="frame" style="display:grid;gap:4vh;align-content:center;min-height:82vh">
+    <div class="kicker" data-anim>Chapter 02</div>
+    <h1 class="h-hero" style="font-size:8vw" data-anim>产品矩阵</h1>
+    <p class="lead" style="max-width:52vw" data-anim>LangChain 不是单一库，而是一套互补的产品矩阵</p>
+  </div>
+  <div class="foot"><div>§2 · 产品矩阵</div><div>— · —</div></div>
+</section>
+
+<!-- 05 §2 Modules -->
+<section class="slide light slide-compact" data-slide-id="sec2-modules">
+  <div class="chrome"><div>§2 · 生态</div><div>04 / 19</div></div>
+  <div class="frame">
+    <div class="kicker" data-anim>Ecosystem Map</div>
+    <h2 class="h-xl" data-anim>LangChain 产品矩阵</h2>
+    <div class="grid-2-asym" style="margin-top:1vh">
+      <div class="grid-4" style="gap:2vh 2vw;align-content:start" data-anim>
+        <div class="mod-card"><div class="role">Core</div><div class="name">langchain-core</div><div class="desc">Runnable、Message、Tool 抽象，与厂商无关</div></div>
+        <div class="mod-card"><div class="role">App</div><div class="name">LangChain</div><div class="desc">Prompt、Chain、Agent 高层 API，LCEL 管道</div></div>
+        <div class="mod-card"><div class="role">Orchestration</div><div class="name">LangGraph</div><div class="desc">状态图编排：循环、分支、Checkpoint、HITL</div></div>
+        <div class="mod-card"><div class="role">Observability</div><div class="name">LangSmith</div><div class="desc">Trace、评测、Prompt 管理，生产调试</div></div>
+        <div class="mod-card"><div class="role">Integrations</div><div class="name">langchain-community</div><div class="desc">向量库、Loader、第三方 API 集成</div></div>
+        <div class="mod-card"><div class="role">Deploy</div><div class="name">LangServe / Platform</div><div class="desc">API 部署与托管（可选）</div></div>
+      </div>
+      <div>
+        <div class="diag-box sm" data-anim>
+          <svg viewBox="0 0 400 320" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="currentColor"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.1">
+              <path d="M 200 46 V 68" marker-end="url(#arr2)"/>
+              <path d="M 200 100 V 118" marker-end="url(#arr2)"/>
+              <path d="M 200 150 V 168" marker-end="url(#arr2)"/>
+              <path d="M 200 200 V 218" marker-end="url(#arr2)"/>
+            </g>
+            <rect x="130" y="10" width="140" height="36" rx="2" class="d-box" stroke="currentColor" stroke-width="1.5"/>
+            <text x="200" y="33" text-anchor="middle" font-family="Noto Sans SC" font-size="13" font-weight="700">Your App</text>
+            <rect x="110" y="68" width="180" height="32" rx="2" class="d-box" stroke="currentColor"/><text x="200" y="89" text-anchor="middle" font-size="12" font-family="Noto Sans SC">LangGraph 编排</text>
+            <rect x="90" y="118" width="220" height="32" rx="2" class="d-box" stroke="currentColor" stroke-width="1.3"/><text x="200" y="139" text-anchor="middle" font-size="12" font-family="Noto Sans SC">LangChain 组件</text>
+            <rect x="70" y="168" width="260" height="32" rx="2" class="d-box" stroke="currentColor"/><text x="200" y="189" text-anchor="middle" font-size="12" font-family="Noto Sans SC">langchain-core + Integrations</text>
+            <rect x="100" y="218" width="200" height="28" rx="2" fill="none" stroke="currentColor" stroke-dasharray="3 2"/><text x="200" y="236" text-anchor="middle" font-size="11" font-family="IBM Plex Mono">OpenAI · Anthropic · ...</text>
+            <rect x="310" y="68" width="78" height="100" rx="2" class="d-box" stroke="currentColor" stroke-width="1"/>
+            <text x="349" y="100" text-anchor="middle" font-size="10" font-family="IBM Plex Mono" transform="rotate(90 349 100)">LangSmith</text>
+          </svg>
+        </div>
+        <div class="diag-cap">Fig 2 · 分层依赖关系</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§2 · 模块一览</div><div>04 / 19</div></div>
+</section>
+
+<!-- 06 §3 Divider -->
+<section class="slide hero light slide-compact" data-slide-id="sec3-divider">
+  <div class="chrome"><div>第三章</div><div>05 / 19</div></div>
+  <div class="frame" style="display:grid;gap:4vh;align-content:center;min-height:82vh">
+    <div class="kicker" data-anim>Chapter 03 · LangChain</div>
+    <h1 class="h-hero" style="font-size:7.5vw" data-anim>组件架构<br>与底层模式</h1>
+    <p class="lead" style="max-width:55vw" data-anim>3.1 Component Architecture · 3.2 四大编排模式</p>
+  </div>
+  <div class="foot"><div>参考 docs.langchain.com/component-architecture</div><div>— · —</div></div>
+</section>
+
+<!-- 06 §3.1 Categories -->
+<section class="slide light slide-compact" data-slide-id="sec3-1-categories">
+  <div class="chrome"><div>§3.1 · Component Categories</div><div>06 / 19</div></div>
+  <div class="frame">
+    <div class="kicker" data-anim>Official · 七大组件类别</div>
+    <h2 class="h-xl" data-anim>Component Categories</h2>
+    <div class="cat-table" data-anim style="margin-top:1vh">
+      <div class="cat-row head"><div>Category</div><div>Key Components</div><div>Use Cases</div></div>
+      <div class="cat-row"><div class="cat">Models</div><div>Chat models · LLMs · Embedding models</div><div>文本生成 · 推理 · 语义理解</div></div>
+      <div class="cat-row"><div class="cat">Tools</div><div>APIs · databases · 函数调用</div><div>搜索 · 数据访问 · 计算</div></div>
+      <div class="cat-row"><div class="cat">Agents</div><div>ReAct · tool calling agents</div><div>非确定性工作流 · 决策</div></div>
+      <div class="cat-row"><div class="cat">Memory</div><div>Message history · custom state</div><div>多轮对话 · 有状态交互</div></div>
+      <div class="cat-row"><div class="cat">Retrievers</div><div>Vector / web retrievers</div><div>RAG · 知识库检索</div></div>
+      <div class="cat-row"><div class="cat">Document processing</div><div>Loaders · splitters · transformers</div><div>PDF · 网页抓取</div></div>
+      <div class="cat-row"><div class="cat">Vector Stores</div><div>Chroma · Pinecone · FAISS</div><div>相似度搜索 · 向量存储</div></div>
+    </div>
+  </div>
+  <div class="foot"><div>docs.langchain.com · component-architecture</div><div>06 / 19</div></div>
+</section>
+
+
+<!-- 07 §3.1 Ecosystem -->
+<section class="slide light slide-compact" data-slide-id="sec3-1-architecture">
+  <div class="chrome"><div>§3.1 · Core Ecosystem</div><div>07 / 19</div></div>
+  <div class="frame">
+    <div class="kicker" data-anim>Official · docs.langchain.com/component-architecture</div>
+    <h2 class="h-xl" data-anim>Core Component Ecosystem</h2>
+    <div class="diag-box" data-anim>
+      <svg viewBox="0 0 780 370" xmlns="http://www.w3.org/2000/svg" aria-label="Core Component Ecosystem">
+        <defs>
+          <marker id="mk-eco" markerWidth="7" markerHeight="7" refX="5.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor" opacity=".85"/></marker>
+        </defs>
+
+        <!-- 分区背景 -->
+        <rect x="12" y="78" width="210" height="88" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".14"/>
+        <text x="22" y="92" font-family="IBM Plex Mono" font-size="8" opacity=".5">Orchestration</text>
+        <rect x="238" y="58" width="250" height="168" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".14"/>
+        <text x="248" y="72" font-family="IBM Plex Mono" font-size="8" opacity=".5">Retrieval</text>
+        <rect x="528" y="4" width="240" height="106" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".14"/>
+        <text x="538" y="18" font-family="IBM Plex Mono" font-size="8" opacity=".5">Input processing</text>
+        <rect x="528" y="116" width="268" height="104" rx="3" fill="currentColor" fill-opacity=".04" stroke="currentColor" stroke-opacity=".14"/>
+        <text x="538" y="130" font-family="IBM Plex Mono" font-size="8" opacity=".5">Embedding &amp; storage</text>
+        <rect x="12" y="238" width="756" height="118" rx="3" fill="currentColor" fill-opacity=".05" stroke="currentColor" stroke-opacity=".14"/>
+        <text x="22" y="252" font-family="IBM Plex Mono" font-size="8" opacity=".5">Generation</text>
+
+        <!-- 连线：正交路由，独立通道，先于节点绘制 -->
+        <g fill="none" stroke="currentColor" stroke-width="1.1">
+          <!-- Input 竖链 -->
+          <path d="M 642 28 V 42" marker-end="url(#mk-eco)"/>
+          <path d="M 642 60 V 66" marker-end="url(#mk-eco)"/>
+          <path d="M 642 84 V 90" marker-end="url(#mk-eco)"/>
+          <path d="M 642 108 V 122 H 682 V 132" marker-end="url(#mk-eco)"/>
+          <!-- Embedding models → Vectors 上边中部 -->
+          <path d="M 682 152 V 188" marker-end="url(#mk-eco)"/>
+          <!-- Vector stores → Vectors（水平） -->
+          <path d="M 600 198 H 658" marker-end="url(#mk-eco)"/>
+          <!-- Retrieval 竖链 -->
+          <path d="M 361 92 V 106" marker-end="url(#mk-eco)"/>
+          <path d="M 361 124 V 134" marker-end="url(#mk-eco)"/>
+          <path d="M 361 152 V 160" marker-end="url(#mk-eco)"/>
+          <path d="M 361 178 V 186" marker-end="url(#mk-eco)"/>
+          <!-- Retrievers → Vector stores（上方通道） -->
+          <path d="M 400 169 H 532 V 180 H 548" marker-end="url(#mk-eco)"/>
+          <!-- Vector stores 左中 → Relevant context 右中（直线） -->
+          <path d="M 548 196 H 420" marker-end="url(#mk-eco)"/>
+          <!-- Orchestration -->
+          <path d="M 110 123 H 132" marker-end="url(#mk-eco)"/>
+          <!-- Agents 下边 → Retrievers 左边中部 -->
+          <path d="M 65 134 V 169 H 322" marker-end="url(#mk-eco)"/>
+          <!-- Agents 下边 → Chat models 左边中部 -->
+          <path d="M 79 134 V 274 H 308" marker-end="url(#mk-eco)"/>
+          <!-- Agents → Tools -->
+          <path d="M 102 134 V 255 H 446 V 262" marker-end="url(#mk-eco)"/>
+          <!-- Relevant context → Chat models（竖线 x=361） -->
+          <path d="M 361 206 V 262" marker-end="url(#mk-eco)"/>
+          <!-- Generation 行内 -->
+          <path d="M 400 274 H 418" marker-end="url(#mk-eco)"/>
+          <path d="M 474 274 H 492" marker-end="url(#mk-eco)"/>
+          <!-- Tool results 上中 → Chat models 上偏右（上方通道，不与边重合） -->
+          <path d="M 531 262 V 248 H 388 V 262" stroke-dasharray="4 3" marker-end="url(#mk-eco)"/>
+          <!-- Chat models 下中 → AI response 上中 -->
+          <path d="M 354 286 V 304" marker-end="url(#mk-eco)"/>
+        </g>
+
+        <!-- 节点（覆盖连线，避免穿透视觉） -->
+        <rect x="598" y="10" width="88" height="18" rx="2" class="d-box-hi"/><text x="642" y="23" text-anchor="middle" font-size="8.5">Text input</text>
+        <rect x="584" y="42" width="116" height="18" rx="2" class="d-box"/><text x="642" y="55" text-anchor="middle" font-size="8.5">Document loaders</text>
+        <rect x="588" y="66" width="108" height="18" rx="2" class="d-box"/><text x="642" y="79" text-anchor="middle" font-size="8.5">Text splitters</text>
+        <rect x="598" y="90" width="88" height="18" rx="2" class="d-box"/><text x="642" y="103" text-anchor="middle" font-size="8.5">Documents</text>
+        <rect x="632" y="132" width="100" height="20" rx="2" class="d-box"/><text x="682" y="145" text-anchor="middle" font-size="8.5">Embedding models</text>
+        <g transform="translate(548,170)">
+          <ellipse cx="26" cy="6" rx="26" ry="6" class="d-box-store"/>
+          <rect x="0" y="6" width="52" height="28" class="d-box-store"/>
+          <ellipse cx="26" cy="34" rx="26" ry="6" class="d-box-store"/>
+          <text x="26" y="24" text-anchor="middle" font-size="7.5">Vector stores</text>
+        </g>
+        <rect x="658" y="188" width="48" height="20" rx="2" class="d-box"/><text x="682" y="201" text-anchor="middle" font-size="8.5">Vectors</text>
+        <rect x="322" y="74" width="78" height="18" rx="2" class="d-box-hi"/><text x="361" y="87" text-anchor="middle" font-size="8.5">User Query</text>
+        <rect x="308" y="106" width="106" height="18" rx="2" class="d-box"/><text x="361" y="119" text-anchor="middle" font-size="8.5">Embedding models</text>
+        <rect x="314" y="134" width="94" height="18" rx="2" class="d-box"/><text x="361" y="147" text-anchor="middle" font-size="8.5">Query vector</text>
+        <rect x="322" y="160" width="78" height="18" rx="2" class="d-box"/><text x="361" y="173" text-anchor="middle" font-size="8.5">Retrievers</text>
+        <rect x="302" y="186" width="118" height="20" rx="2" class="d-box-hi"/><text x="361" y="200" text-anchor="middle" font-size="8.5" font-weight="600">Relevant context</text>
+        <rect x="48" y="112" width="62" height="22" rx="2" class="d-box-hi"/><text x="79" y="127" text-anchor="middle" font-size="9" font-weight="600">Agents</text>
+        <rect x="132" y="112" width="62" height="22" rx="2" class="d-box"/><text x="163" y="127" text-anchor="middle" font-size="9">Memory</text>
+        <rect x="308" y="262" width="92" height="24" rx="2" class="d-box-hi"/><text x="354" y="278" text-anchor="middle" font-size="9" font-weight="600">Chat models</text>
+        <rect x="418" y="262" width="56" height="24" rx="2" class="d-box"/><text x="446" y="278" text-anchor="middle" font-size="9">Tools</text>
+        <rect x="492" y="262" width="78" height="24" rx="2" class="d-box"/><text x="531" y="278" text-anchor="middle" font-size="8.5">Tool results</text>
+        <rect x="308" y="304" width="92" height="24" rx="2" class="d-box-hi"/><text x="354" y="320" text-anchor="middle" font-size="9">AI response</text>
+      </svg>
+    </div>
+    <p class="lead" style="font-size:max(12px,.95vw);margin-top:.6vh" data-anim>五层逐层构建：Input → Embed → Retrieve → Generate → Orchestrate</p>
+  </div>
+  <div class="foot"><div>§3.1 · Core component ecosystem</div><div>07 / 19</div></div>
+</section>
+
+<!-- 08 §3.1 Common Patterns -->
+<section class="slide light slide-compact" data-slide-id="sec3-1-patterns">
+  <div class="chrome"><div>§3.1 · Common Patterns</div><div>08 / 19</div></div>
+  <div class="frame">
+    <div class="kicker" data-anim>Official · 三种典型组合模式</div>
+    <h2 class="h-xl" data-anim>Common Patterns</h2>
+    <div class="grid-3-diag" style="margin-top:1vh">
+      <div data-anim>
+        <p style="font-family:var(--mono);font-size:9px;opacity:.55;margin-bottom:.5vh">RAG</p>
+        <div class="diag-box sm">
+          <svg viewBox="0 0 280 210" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="p1" markerWidth="6" markerHeight="6" refX="4" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 Z" fill="currentColor"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.1">
+              <path d="M 100 22 H 118" marker-end="url(#p1)"/>
+              <path d="M 190 22 H 208" marker-end="url(#p1)"/>
+              <path d="M 55 34 V 50 H 140 V 82" marker-end="url(#p1)"/>
+              <path d="M 239 34 V 68 H 140 V 82" marker-end="url(#p1)"/>
+              <path d="M 140 108 V 128" marker-end="url(#p1)"/>
+            </g>
+            <rect x="10" y="10" width="90" height="24" rx="1" class="d-box"/><text x="55" y="26" text-anchor="middle" font-size="9">User question</text>
+            <rect x="118" y="10" width="72" height="24" rx="1" class="d-box"/><text x="154" y="26" text-anchor="middle" font-size="9">Retriever</text>
+            <rect x="208" y="10" width="62" height="24" rx="1" class="d-box"/><text x="239" y="26" text-anchor="middle" font-size="8">Relevant docs</text>
+            <rect x="90" y="82" width="100" height="26" rx="1" class="d-box-hi"/><text x="140" y="99" text-anchor="middle" font-size="10" font-weight="600">Chat model</text>
+            <rect x="80" y="128" width="120" height="24" rx="1" class="d-box"/><text x="140" y="144" text-anchor="middle" font-size="9">Informed response</text>
+            <text x="140" y="175" text-anchor="middle" font-size="9" opacity=".65">04_rag/</text>
+          </svg>
+        </div>
+      </div>
+      <div data-anim>
+        <p style="font-family:var(--mono);font-size:9px;opacity:.55;margin-bottom:.5vh">AGENT WITH TOOLS</p>
+        <div class="diag-box sm">
+          <svg viewBox="0 0 280 210" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="p2" markerWidth="6" markerHeight="6" refX="5" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 Z" fill="currentColor"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.1">
+              <path d="M 90 32 H 108" marker-end="url(#p2)"/>
+              <path d="M 140 44 V 58" marker-end="url(#p2)"/>
+              <path d="M 162 78 H 200" marker-end="url(#p2)"/>
+              <path d="M 234 90 V 108" marker-end="url(#p2)"/>
+              <!-- Tool result 右边 → Agent 右边 -->
+              <path d="M 270 119 H 278 V 32 H 172" stroke-dasharray="4 3" marker-end="url(#p2)"/>
+              <path d="M 118 78 H 78" marker-end="url(#p2)"/>
+            </g>
+            <rect x="10" y="20" width="80" height="24" rx="1" class="d-box"/><text x="50" y="36" text-anchor="middle" font-size="9">User request</text>
+            <rect x="108" y="20" width="64" height="24" rx="1" class="d-box"/><text x="140" y="36" text-anchor="middle" font-size="9">Agent</text>
+            <polygon points="140,58 118,78 162,78" class="d-box"/><text x="140" y="74" text-anchor="middle" font-size="8">Need tool?</text>
+            <rect x="200" y="66" width="68" height="24" rx="1" class="d-box"/><text x="234" y="82" text-anchor="middle" font-size="8">Call tool</text>
+            <rect x="198" y="108" width="72" height="22" rx="1" class="d-box"/><text x="234" y="123" text-anchor="middle" font-size="8">Tool result</text>
+            <rect x="10" y="66" width="68" height="24" rx="1" class="d-box"/><text x="44" y="82" text-anchor="middle" font-size="8">Final answer</text>
+            <text x="178" y="72" font-size="7" opacity=".6">Yes</text>
+            <text x="252" y="72" font-size="7" opacity=".5">回 Agent</text>
+            <text x="92" y="72" font-size="7" opacity=".6">No</text>
+            <text x="140" y="175" text-anchor="middle" font-size="9" opacity=".65">05_tools_agents/</text>
+          </svg>
+        </div>
+      </div>
+      <div data-anim>
+        <p style="font-family:var(--mono);font-size:9px;opacity:.55;margin-bottom:.5vh">MULTI-AGENT</p>
+        <div class="diag-box sm">
+          <svg viewBox="0 0 320 196" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="p3" markerWidth="6" markerHeight="6" refX="4" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 Z" fill="currentColor"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.1">
+              <path d="M 160 26 V 46" marker-end="url(#p3)"/>
+              <path d="M 135 72 V 82 H 53 V 92" marker-end="url(#p3)"/>
+              <path d="M 185 72 V 82 H 163 V 92" marker-end="url(#p3)"/>
+              <path d="M 53 118 V 128 H 125 V 138" marker-end="url(#p3)"/>
+              <path d="M 163 118 V 128 H 195 V 138" marker-end="url(#p3)"/>
+              <!-- Results 底中 → Supervisor 左中（左外绕 x=4，末段 → 水平入左边） -->
+              <path d="M 160 162 V 168 H 4 V 59 H 110" marker-end="url(#p3)"/>
+              <!-- Supervisor → Coordinated response 顶边（右侧出 → 通道 y=78，末段 ↓ 垂直） -->
+              <path d="M 210 68 V 78 H 269 V 92" marker-end="url(#p3)"/>
+            </g>
+            <rect x="110" y="4" width="100" height="22" rx="1" class="d-box"/><text x="160" y="19" text-anchor="middle" font-size="9">Complex Task</text>
+            <rect x="110" y="46" width="100" height="26" rx="1" class="d-box-hi"/><text x="160" y="63" text-anchor="middle" font-size="10" font-weight="600">Supervisor</text>
+            <rect x="8" y="92" width="90" height="26" rx="1" class="d-box"/><text x="53" y="109" text-anchor="middle" font-size="8">Specialist 1</text>
+            <rect x="118" y="92" width="90" height="26" rx="1" class="d-box"/><text x="163" y="109" text-anchor="middle" font-size="8">Specialist 2</text>
+            <rect x="226" y="92" width="86" height="26" rx="1" class="d-box"/><text x="269" y="105" text-anchor="middle" font-size="7">Coordinated</text><text x="269" y="114" text-anchor="middle" font-size="7">response</text>
+            <rect x="88" y="138" width="144" height="24" rx="1" class="d-box"/><text x="160" y="154" text-anchor="middle" font-size="8">Results</text>
+          </svg>
+        </div>
+        <div class="diag-cap">09_deep_research/</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§3.1 · RAG · Agent · Multi-Agent</div><div>08 / 19</div></div>
+</section>
+
+
+<!-- 09 §3.2 Overview -->
+<section class="slide light slide-compact" data-slide-id="sec3-2-overview">
+  <div class="chrome"><div>§3.2 · 底层模式</div><div>09 / 19</div></div>
+  <div class="frame">
+    <div class="kicker" data-anim>Four Patterns · LangChain 底层实现</div>
+    <h2 class="h-xl" data-anim>四大编排模式</h2>
+    <div class="grid-4" style="gap:1.5vh 2vw;margin-top:.8vh" data-anim>
+      <div class="mod-card">
+        <div class="role">01 · Prompt Chaining</div>
+        <div class="name">链式 Prompt</div>
+        <div class="desc">上步输出作为下步输入，路径固定无循环</div>
+        <div class="desc" style="font-family:var(--mono);font-size:max(10px,.78vw);opacity:.85;margin-top:.4vh">RunnableSequence<br>chain = p1 | llm | p2 | llm<br>.invoke() 逐步传递</div>
+      </div>
+      <div class="mod-card">
+        <div class="role">02 · Routing</div>
+        <div class="name">条件路由</div>
+        <div class="desc">按意图/规则分发到不同 Chain</div>
+        <div class="desc" style="font-family:var(--mono);font-size:max(10px,.78vw);opacity:.85;margin-top:.4vh">RunnableBranch<br>router | rag_chain | chat_chain<br>classifier 决定分支</div>
+      </div>
+      <div class="mod-card">
+        <div class="role">03 · Tool Use</div>
+        <div class="name">工具调用</div>
+        <div class="desc">LLM 输出 tool_calls，运行时执行并回灌</div>
+        <div class="desc" style="font-family:var(--mono);font-size:max(10px,.78vw);opacity:.85;margin-top:.4vh">bind_tools() + ToolMessage<br>while ai.tool_calls: …<br>create_agent 封装循环</div>
+      </div>
+      <div class="mod-card">
+        <div class="role">04 · Reflection</div>
+        <div class="name">反思迭代</div>
+        <div class="desc">生成 → 评判 → 不满足则修订</div>
+        <div class="desc" style="font-family:var(--mono);font-size:max(10px,.78vw);opacity:.85;margin-top:.4vh">双 Chain：generator | critic<br>LangGraph 条件边回环<br>09 supervisor 决策</div>
+      </div>
+    </div>
+    <div class="diag-box sm" style="margin-top:1vh;max-height:22vh" data-anim>
+      <svg viewBox="0 0 860 70" xmlns="http://www.w3.org/2000/svg">
+        <defs><marker id="pf" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor"/></marker></defs>
+        <g fill="none" stroke="currentColor" stroke-width="1.1">
+          <path d="M 188 36 H 208" marker-end="url(#pf)"/>
+          <path d="M 388 36 H 408" marker-end="url(#pf)"/>
+          <path d="M 588 36 H 608" marker-end="url(#pf)"/>
+        </g>
+        <rect x="8" y="18" width="180" height="36" class="d-box"/><text x="98" y="40" text-anchor="middle" font-size="11">Chaining · LCEL |</text>
+        <rect x="208" y="18" width="180" height="36" class="d-box"/><text x="298" y="40" text-anchor="middle" font-size="11">Routing · Branch</text>
+        <rect x="408" y="18" width="180" height="36" class="d-box-hi"/><text x="498" y="40" text-anchor="middle" font-size="11">Tool Use · Loop</text>
+        <rect x="608" y="18" width="180" height="36" class="d-box-hi"/><text x="698" y="40" text-anchor="middle" font-size="11">Reflection · Graph</text>
+        <text x="430" y="12" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" opacity=".5">DAG → 分支 → 循环 → 自环</text>
+      </svg>
+    </div>
+  </div>
+  <div class="foot"><div>§3.2 · 模式 + 底层 API</div><div>09 / 19</div></div>
+</section>
+
+<!-- 10 §3.2 Chaining + Routing -->
+<section class="slide light slide-compact" data-slide-id="sec3-2-chain-route">
+  <div class="chrome"><div>§3.2 · Chaining &amp; Routing</div><div>10 / 19</div></div>
+  <div class="frame">
+    <div class="kicker" data-anim>Pattern 01 &amp; 02</div>
+    <h2 class="h-xl" data-anim>Prompt Chaining · Routing</h2>
+    <div class="grid-2-diag" style="margin-top:1vh">
+      <div data-anim>
+        <p style="font-family:var(--mono);font-size:10px;opacity:.55;margin-bottom:.6vh">PROMPT CHAINING · LCEL</p>
+        <div class="diag-box sm">
+          <svg viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="b1" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.1">
+              <path d="M 90 33 H 110" marker-end="url(#b1)"/>
+              <path d="M 190 33 H 210" marker-end="url(#b1)"/>
+              <path d="M 270 33 H 290" marker-end="url(#b1)"/>
+              <path d="M 315 46 V 62 H 150 V 85" marker-end="url(#b1)"/>
+              <path d="M 190 98 H 210" marker-end="url(#b1)"/>
+              <path d="M 270 98 H 290" marker-end="url(#b1)"/>
+            </g>
+            <rect x="20" y="20" width="70" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="55" y="38" text-anchor="middle" font-size="10">Input</text>
+            <rect x="110" y="20" width="80" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="150" y="38" text-anchor="middle" font-size="10">Prompt₁</text>
+            <rect x="210" y="20" width="60" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="240" y="38" text-anchor="middle" font-size="10">LLM</text>
+            <rect x="290" y="20" width="50" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="315" y="38" text-anchor="middle" font-size="10">Out₁</text>
+            <rect x="110" y="85" width="80" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="150" y="103" text-anchor="middle" font-size="10">Prompt₂</text>
+            <rect x="210" y="85" width="60" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="240" y="103" text-anchor="middle" font-size="10">LLM</text>
+            <rect x="290" y="85" width="50" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="315" y="103" text-anchor="middle" font-size="10">Final</text>
+            <text x="180" y="140" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" opacity=".55">prompt | llm | parser | prompt | llm</text>
+            <text x="180" y="175" text-anchor="middle" font-size="11" opacity=".75">02_lcel/01_pipe_chain.py</text>
+          </svg>
+        </div>
+        <ul class="bullets-compact" style="margin-top:.8vh"><li><strong>原理</strong>：RunnableSequence 顺序 invoke</li><li><strong>API</strong>：prompt | llm | StrOutputParser()</li><li>02_lcel/01_pipe_chain.py</li></ul>
+      </div>
+      <div data-anim>
+        <p style="font-family:var(--mono);font-size:10px;opacity:.55;margin-bottom:.6vh">ROUTING · RunnableBranch</p>
+        <div class="diag-box sm">
+          <svg viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="b2" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.1">
+              <path d="M 180 43 V 60" marker-end="url(#b2)"/>
+              <path d="M 165 88 H 60 V 120" marker-end="url(#b2)"/>
+              <path d="M 180 88 V 120" marker-end="url(#b2)"/>
+              <path d="M 195 88 H 300 V 120" marker-end="url(#b2)"/>
+            </g>
+            <rect x="130" y="15" width="100" height="28" rx="1" class="d-box" stroke="currentColor"/><text x="180" y="34" text-anchor="middle" font-size="11">User Input</text>
+            <polygon points="180,60 150,88 210,88" class="d-box" stroke="currentColor"/><text x="180" y="82" text-anchor="middle" font-size="10">Router</text>
+            <rect x="20" y="120" width="80" height="32" rx="1" class="d-box" stroke="currentColor"/><text x="60" y="141" text-anchor="middle" font-size="10">RAG Chain</text>
+            <rect x="140" y="120" width="80" height="32" rx="1" class="d-box" stroke="currentColor"/><text x="180" y="141" text-anchor="middle" font-size="10">Chat Chain</text>
+            <rect x="260" y="120" width="80" height="32" rx="1" class="d-box" stroke="currentColor"/><text x="300" y="141" text-anchor="middle" font-size="10">Tool Agent</text>
+            <text x="180" y="175" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" opacity=".55">02_lcel/05_runnable_branch.py</text>
+          </svg>
+        </div>
+        <ul class="bullets-compact" style="margin-top:.8vh"><li><strong>原理</strong>：RunnableBranch 条件匹配</li><li><strong>API</strong>：RunnableLambda(classify) | branch</li><li>02_lcel/05_runnable_branch.py</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§3.2 · Chaining &amp; Routing</div><div>10 / 19</div></div>
+</section>
+
+<!-- 11 §3.2 Tool Use + Reflection -->
+<section class="slide light slide-compact" data-slide-id="sec3-2-tool-reflect">
+  <div class="chrome"><div>§3.2 · Tool Use &amp; Reflection</div><div>11 / 19</div></div>
+  <div class="frame">
+    <div class="kicker" data-anim>Pattern 03 &amp; 04</div>
+    <h2 class="h-xl" data-anim>Tool Use · Reflection</h2>
+    <div class="grid-2-diag" style="margin-top:1vh">
+      <div data-anim>
+        <p style="font-family:var(--mono);font-size:10px;opacity:.55;margin-bottom:.6vh">TOOL USE · ReAct Loop</p>
+        <div class="diag-box sm">
+          <svg viewBox="0 0 360 240" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="c1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="currentColor"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.2">
+              <path d="M 180 42 V 58" marker-end="url(#c1)"/>
+              <path d="M 208 80 H 248" marker-end="url(#c1)"/>
+              <path d="M 292 94 V 112" marker-end="url(#c1)"/>
+              <!-- ReAct 回环：ToolMessage 右侧出 → LLM 右侧入 -->
+              <path d="M 336 125 H 348 V 27 H 230" stroke-dasharray="4 3" marker-end="url(#c1)"/>
+              <path d="M 152 80 H 92" marker-end="url(#c1)"/>
+            </g>
+            <rect x="130" y="12" width="100" height="30" rx="2" class="d-box-hi"/><text x="180" y="32" text-anchor="middle" font-size="11" font-weight="600">LLM</text>
+            <polygon points="180,58 152,80 208,80" class="d-box"/><text x="180" y="74" text-anchor="middle" font-size="9">tool_calls?</text>
+            <rect x="248" y="66" width="88" height="28" class="d-box"/><text x="292" y="84" text-anchor="middle" font-size="10">Execute Tool</text>
+            <rect x="248" y="112" width="88" height="26" class="d-box"/><text x="292" y="129" text-anchor="middle" font-size="9">ToolMessage</text>
+            <rect x="12" y="66" width="80" height="28" class="d-box-hi"/><text x="52" y="84" text-anchor="middle" font-size="10">Final Answer</text>
+            <text x="222" y="74" font-size="8" opacity=".6">Yes</text>
+            <text x="210" y="172" font-size="8" opacity=".55">回灌上下文</text>
+            <text x="108" y="74" font-size="8" opacity=".6">No</text>
+            <text x="180" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" opacity=".55">bind_tools() + while tool_calls</text>
+            <text x="180" y="188" text-anchor="middle" font-size="10" opacity=".75">底层：AIMessage.tool_calls → ToolMessage</text>
+            <text x="180" y="210" text-anchor="middle" font-size="9" opacity=".65">05-2 bind_tools · create_agent</text>
+          </svg>
+        </div>
+        <ul class="bullets-compact" style="margin-top:.8vh"><li><strong>原理</strong>：AIMessage.tool_calls → 执行 → ToolMessage</li><li><strong>API</strong>：llm.bind_tools() / create_agent</li><li>05_tools_agents/</li></ul>
+      </div>
+      <div data-anim>
+        <p style="font-family:var(--mono);font-size:10px;opacity:.55;margin-bottom:.6vh">REFLECTION · Self-Critique</p>
+        <div class="diag-box sm">
+          <svg viewBox="0 0 360 230" xmlns="http://www.w3.org/2000/svg">
+            <defs><marker id="c2" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.2">
+              <path d="M 180 41 V 55" marker-end="url(#c2)"/>
+              <path d="M 180 81 V 95" marker-end="url(#c2)"/>
+              <path d="M 150 115 H 100 V 130" marker-end="url(#c2)"/>
+              <!-- 修订回环：Revise 左边 → Generate Draft 左边 -->
+              <path d="M 20 143 H 12 V 28 H 130" stroke-dasharray="4 2" marker-end="url(#c2)"/>
+              <path d="M 210 115 H 235 V 143 H 260" marker-end="url(#c2)"/>
+            </g>
+            <rect x="130" y="15" width="100" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="180" y="33" text-anchor="middle" font-size="10">Generate Draft</text>
+            <rect x="120" y="55" width="120" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="180" y="73" text-anchor="middle" font-size="10">Critic / Evaluate</text>
+            <polygon points="180,95 150,115 210,115" class="d-box" stroke="currentColor"/><text x="180" y="110" text-anchor="middle" font-size="9">Good enough?</text>
+            <rect x="20" y="130" width="80" height="26" rx="1" class="d-box" stroke="currentColor"/><text x="60" y="148" text-anchor="middle" font-size="10">Revise</text>
+            <rect x="260" y="130" width="80" height="26" rx="1" class="d-box" stroke="currentColor" stroke-width="1.2"/><text x="300" y="148" text-anchor="middle" font-size="10">Output</text>
+            <text x="180" y="185" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" opacity=".55">09_deep_research/ supervisor 反思</text>
+          </svg>
+        </div>
+        <ul class="bullets-compact" style="margin-top:.8vh"><li><strong>原理</strong>：generator + critic 双 Runnable</li><li><strong>API</strong>：LangGraph 条件边回 revise 节点</li><li>09_deep_research/supervisor.py</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§3.2 · Tool &amp; Reflection</div><div>11 / 19</div></div>
+</section>
+
+<!-- 12 §4 Divider -->
+<section class="slide hero light slide-compact" data-slide-id="sec4-divider">
+  <div class="chrome"><div>第四章</div><div>12 / 19</div></div>
+  <div class="frame" style="display:grid;gap:3vh;align-content:center;min-height:82vh">
+    <div class="kicker" data-anim>Chapter 04 · 06_langgraph/</div>
+    <h1 class="h-hero" style="font-size:7.5vw" data-anim>LangGraph</h1>
+    <p class="lead" style="max-width:58vw" data-anim>当 LCEL 链不够：需要显式<strong>状态图</strong>表达循环、分支、持久化与人工审批。本章 5 页逐一展开。</p>
+    <div class="grid-4" style="max-width:62vw;gap:1vh 1.5vw;margin-top:.5vh" data-anim>
+      <div class="mod-card" style="padding:1vh 1vw"><div class="role">01</div><div class="name" style="font-size:max(13px,1vw)">StateGraph</div><div class="desc">State · Node · Edge</div></div>
+      <div class="mod-card" style="padding:1vh 1vw"><div class="role">02</div><div class="name" style="font-size:max(13px,1vw)">ReAct 图</div><div class="desc">model ↔ tools 条件循环</div></div>
+      <div class="mod-card" style="padding:1vh 1vw"><div class="role">03</div><div class="name" style="font-size:max(13px,1vw)">Checkpoint</div><div class="desc">MemorySaver · thread_id</div></div>
+      <div class="mod-card" style="padding:1vh 1vw"><div class="role">04</div><div class="name" style="font-size:max(13px,1vw)">HITL</div><div class="desc">interrupt_before 审批</div></div>
+    </div>
+  </div>
+  <div class="foot"><div>§4 · 状态图编排</div><div>12 / 19</div></div>
+</section>
+
+<!-- 13 §4 · StateGraph 三要素 -->
+<section class="slide light slide-compact" data-slide-id="sec4-stategraph">
+  <div class="chrome"><div>§4 · StateGraph</div><div>13 / 19</div></div>
+  <div class="frame grid-2-asym sec4-split" style="gap:2vw">
+    <div class="sec4-text" data-anim>
+      <div class="kicker">Core · 01</div>
+      <h2 class="h-xl">State + Node + Edge</h2>
+      <p class="lead" style="font-size:max(13px,1vw);margin-bottom:.3vh">LangGraph 把 Agent 流程建模为<strong>状态机</strong>：共享 State 在节点间流转，边决定下一步。</p>
+      <ul class="bullets-compact">
+        <li><strong>State</strong> — TypedDict / MessagesState，定义图内共享字段</li>
+        <li><strong>Node</strong> — 纯函数 <code style="font-family:var(--mono);font-size:.88em">(state) → 部分更新</code>，只返回变更字段</li>
+        <li><strong>Edge</strong> — 普通边固定跳转；条件边按 state 动态路由</li>
+      </ul>
+      <pre>StateGraph(State)
+  .add_node("count", count_words)
+  .add_edge(START, "count")
+  .add_edge("count", "upper")
+  .compile()</pre>
+      <p style="font-family:var(--mono);font-size:9px;opacity:.55;margin-top:.3vh">06_langgraph/01_state_graph.py</p>
+    </div>
+    <div class="sec4-diag" data-anim>
+      <p class="diag-label">Fig 4a · 线性 StateGraph · 01_state_graph.py</p>
+      <div class="diag-box">
+        <svg viewBox="0 0 360 210" xmlns="http://www.w3.org/2000/svg" aria-label="StateGraph 线性流程">
+          <defs><marker id="lg-sg" markerWidth="7" markerHeight="7" refX="5.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor" opacity=".85"/></marker></defs>
+          <g fill="none" stroke="currentColor" stroke-width="1.1">
+            <path d="M 120 34 V 48" marker-end="url(#lg-sg)"/>
+            <path d="M 120 82 V 96" marker-end="url(#lg-sg)"/>
+            <path d="M 120 130 V 144" marker-end="url(#lg-sg)"/>
+          </g>
+          <ellipse cx="120" cy="20" rx="42" ry="14" class="d-box" stroke="currentColor"/><text x="120" y="24" text-anchor="middle" font-size="10" font-weight="600">START</text>
+          <rect x="70" y="48" width="100" height="34" rx="2" class="d-box" stroke="currentColor"/><text x="120" y="64" text-anchor="middle" font-size="10" font-weight="600">count</text><text x="120" y="76" text-anchor="middle" font-size="8" opacity=".65">word_count</text>
+          <rect x="70" y="96" width="100" height="34" rx="2" class="d-box" stroke="currentColor"/><text x="120" y="112" text-anchor="middle" font-size="10" font-weight="600">upper</text><text x="120" y="124" text-anchor="middle" font-size="8" opacity=".65">upper</text>
+          <rect x="70" y="144" width="100" height="28" rx="2" class="d-box-hi" stroke="currentColor"/><text x="120" y="162" text-anchor="middle" font-size="10">END</text>
+          <rect x="210" y="44" width="130" height="88" rx="2" class="d-box-store" stroke="currentColor" stroke-dasharray="3 2"/><text x="275" y="62" text-anchor="middle" font-size="9" font-weight="600">State</text>
+          <text x="275" y="78" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" opacity=".75">text: str</text>
+          <text x="275" y="92" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" opacity=".75">word_count: int</text>
+          <text x="275" y="106" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" opacity=".75">upper: str</text>
+          <text x="275" y="124" text-anchor="middle" font-size="8" opacity=".55">节点只返回变更字段</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§4 · StateGraph 三要素</div><div>13 / 19</div></div>
+</section>
+
+<!-- 14 §4 · ReAct 循环 -->
+<section class="slide light slide-compact" data-slide-id="sec4-react">
+  <div class="chrome"><div>§4 · ReAct 图</div><div>14 / 19</div></div>
+  <div class="frame grid-2-asym sec4-split" style="gap:2vw">
+    <div class="sec4-text" data-anim>
+      <div class="kicker">Core · 02</div>
+      <h2 class="h-xl">model ↔ tools 条件循环</h2>
+      <p class="lead" style="font-size:max(13px,1vw);margin-bottom:.3vh"><code style="font-family:var(--mono);font-size:.88em">create_react_agent</code> 底层就是两个节点 + 一条条件边 + 回环边。</p>
+      <ul class="bullets-compact">
+        <li><strong>model 节点</strong> — bind_tools 后 LLM 决定是否出 tool_calls</li>
+        <li><strong>tools 节点</strong> — ToolNode 执行工具，写回 ToolMessage</li>
+        <li><strong>tools_condition</strong> — 有 tool_calls → tools，否则 → END</li>
+      </ul>
+      <pre>.add_conditional_edges(
+    "model", tools_condition,
+    {"tools": "tools", END: END})
+.add_edge("tools", "model")</pre>
+      <p style="font-family:var(--mono);font-size:9px;opacity:.55;margin-top:.3vh">06_langgraph/03_tool_node.py</p>
+    </div>
+    <div class="sec4-diag" data-anim>
+      <p class="diag-label">Fig 4b · ReAct 循环 · 03_tool_node.py</p>
+      <div class="diag-box">
+        <svg viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg" aria-label="ReAct 循环">
+          <defs><marker id="lg-rc" markerWidth="7" markerHeight="7" refX="5.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor" opacity=".85"/></marker></defs>
+          <g fill="none" stroke="currentColor" stroke-width="1.1">
+            <path d="M 180 34 V 48" marker-end="url(#lg-rc)"/>
+            <path d="M 180 82 V 96" marker-end="url(#lg-rc)"/>
+            <path d="M 152 114 H 72 V 168 H 78" marker-end="url(#lg-rc)"/>
+            <path d="M 208 114 H 248 V 128" marker-end="url(#lg-rc)"/>
+            <path d="M 296 156 H 312 V 62 H 232" stroke-dasharray="4 3" marker-end="url(#lg-rc)"/>
+          </g>
+          <ellipse cx="180" cy="20" rx="40" ry="13" class="d-box" stroke="currentColor"/><text x="180" y="24" text-anchor="middle" font-size="10" font-weight="600">START</text>
+          <rect x="130" y="48" width="100" height="34" rx="2" class="d-box-hi" stroke="currentColor"/><text x="180" y="68" text-anchor="middle" font-size="11" font-weight="600">model</text>
+          <polygon points="180,96 152,114 208,114" class="d-box" stroke="currentColor"/><text x="180" y="110" text-anchor="middle" font-size="8">tools?</text>
+          <rect x="248" y="128" width="96" height="28" rx="2" class="d-box" stroke="currentColor"/><text x="296" y="146" text-anchor="middle" font-size="10">tools</text>
+          <rect x="8" y="168" width="70" height="28" rx="2" class="d-box" stroke="currentColor"/><text x="43" y="186" text-anchor="middle" font-size="10">END</text>
+          <text x="108" y="106" font-size="7" opacity=".6">No</text>
+          <text x="218" y="106" font-size="7" opacity=".6">Yes</text>
+          <text x="318" y="100" font-size="7" opacity=".55">ToolMessage</text>
+          <text x="268" y="178" font-size="7" opacity=".55">回 model 总结</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§4 · ReAct 条件循环</div><div>14 / 19</div></div>
+</section>
+
+<!-- 15 §4 · Checkpoint -->
+<section class="slide light slide-compact" data-slide-id="sec4-checkpoint">
+  <div class="chrome"><div>§4 · Checkpoint</div><div>15 / 19</div></div>
+  <div class="frame grid-2-asym sec4-split" style="gap:2vw">
+    <div class="sec4-text" data-anim>
+      <div class="kicker">Core · 03</div>
+      <h2 class="h-xl">Checkpoint 持久化</h2>
+      <p class="lead" style="font-size:max(13px,1vw);margin-bottom:.3vh">每次 invoke 后自动保存 State；同一 <code style="font-family:var(--mono);font-size:.88em">thread_id</code> 下次调用可恢复上下文。</p>
+      <ul class="bullets-compact">
+        <li><strong>MemorySaver</strong> — 内存 checkpointer，开发调试够用</li>
+        <li><strong>thread_id</strong> — 按会话隔离 checkpoint，多用户互不干扰</li>
+        <li><strong>MessagesState</strong> — messages 字段自动累加，适合 Chatbot</li>
+      </ul>
+      <pre>.compile(checkpointer=MemorySaver())
+cfg = {"configurable": {"thread_id": "t-1"}}
+graph.invoke({...}, config=cfg)  # 多轮同 thread</pre>
+      <p style="font-family:var(--mono);font-size:9px;opacity:.55;margin-top:.3vh">06_langgraph/02_chatbot.py</p>
+    </div>
+    <div class="sec4-diag" data-anim>
+      <p class="diag-label">Fig 4c · thread_id 多轮恢复 · 02_chatbot.py</p>
+      <div class="diag-box">
+        <svg viewBox="0 0 380 210" xmlns="http://www.w3.org/2000/svg" aria-label="Checkpoint 持久化">
+          <defs><marker id="lg-cp" markerWidth="7" markerHeight="7" refX="5.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor" opacity=".85"/></marker></defs>
+          <g fill="none" stroke="currentColor" stroke-width="1.1">
+            <path d="M 68 52 H 108" marker-end="url(#lg-cp)"/>
+            <path d="M 168 52 H 208" marker-end="url(#lg-cp)"/>
+            <path d="M 268 52 H 308" marker-end="url(#lg-cp)"/>
+            <path d="M 138 72 V 88 H 190 V 104" marker-end="url(#lg-cp)"/>
+            <path d="M 238 72 V 88 H 190 V 104" marker-end="url(#lg-cp)"/>
+            <path d="M 190 128 V 148" marker-end="url(#lg-cp)"/>
+          </g>
+          <rect x="8" y="32" width="60" height="40" rx="2" class="d-box" stroke="currentColor"/><text x="38" y="50" text-anchor="middle" font-size="8">invoke ①</text><text x="38" y="62" text-anchor="middle" font-size="7" opacity=".65">「我叫小红」</text>
+          <rect x="108" y="32" width="60" height="40" rx="2" class="d-box" stroke="currentColor"/><text x="138" y="50" text-anchor="middle" font-size="8">invoke ②</text><text x="138" y="62" text-anchor="middle" font-size="7" opacity=".65">「我喜欢猫」</text>
+          <rect x="208" y="32" width="60" height="40" rx="2" class="d-box" stroke="currentColor"/><text x="238" y="50" text-anchor="middle" font-size="8">invoke ③</text><text x="238" y="62" text-anchor="middle" font-size="7" opacity=".65">「还记得吗？」</text>
+          <rect x="308" y="32" width="60" height="40" rx="2" class="d-box-hi" stroke="currentColor" stroke-dasharray="3 2"/><text x="338" y="50" text-anchor="middle" font-size="8">有记忆</text><text x="338" y="62" text-anchor="middle" font-size="7" opacity=".65">回答正确</text>
+          <rect x="130" y="104" width="120" height="24" rx="2" class="d-box-store" stroke="currentColor"/><text x="190" y="120" text-anchor="middle" font-size="9" font-weight="600">MemorySaver</text>
+          <rect x="110" y="148" width="160" height="34" rx="2" class="d-box-hi" stroke="currentColor"/><text x="190" y="164" text-anchor="middle" font-size="9">thread_id: "thread-1"</text><text x="190" y="176" text-anchor="middle" font-size="8" opacity=".65">每次 invoke 写入 checkpoint</text>
+          <text x="190" y="24" text-anchor="middle" font-family="IBM Plex Mono" font-size="8" opacity=".55">同一 config → 共享 State</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§4 · MemorySaver · thread_id</div><div>15 / 19</div></div>
+</section>
+
+<!-- 16 §4 · HITL -->
+<section class="slide light slide-compact" data-slide-id="sec4-hitl">
+  <div class="chrome"><div>§4 · Human-in-the-loop</div><div>16 / 19</div></div>
+  <div class="frame grid-2-asym sec4-split" style="gap:2vw">
+    <div class="sec4-text" data-anim>
+      <div class="kicker">Core · 04</div>
+      <h2 class="h-xl">Human-in-the-loop</h2>
+      <p class="lead" style="font-size:max(13px,1vw);margin-bottom:.3vh">敏感操作（删库、转账）在进节点前<strong>暂停</strong>，等人审批后再续跑。</p>
+      <ul class="bullets-compact">
+        <li><strong>interrupt_before</strong> — compile 时声明暂停点，如 <code style="font-family:var(--mono);font-size:.88em">["tools"]</code></li>
+        <li><strong>第一次 invoke</strong> — 图跑到 tools 前停下，返回待审批 state</li>
+        <li><strong>第二次 invoke(None)</strong> — 沿用 checkpoint 从暂停处继续</li>
+      </ul>
+      <pre>.compile(
+    checkpointer=MemorySaver(),
+    interrupt_before=["tools"],
+)
+state = graph.invoke({...}, config=cfg)
+state = graph.invoke(None, config=cfg)</pre>
+      <p style="font-family:var(--mono);font-size:9px;opacity:.55;margin-top:.3vh">06_langgraph/04_human_in_loop.py</p>
+    </div>
+    <div class="sec4-diag" data-anim>
+      <p class="diag-label">Fig 4d · interrupt_before · 04_human_in_loop.py</p>
+      <div class="diag-box">
+        <svg viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg" aria-label="Human-in-the-loop">
+          <defs><marker id="lg-hitl" markerWidth="7" markerHeight="7" refX="5.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor" opacity=".85"/></marker></defs>
+          <!-- 连线先于节点；START→model→tools?→Human 等间距 g=26 -->
+          <g fill="none" stroke="currentColor" stroke-width="1.1">
+            <path d="M 180 32 V 58" marker-end="url(#lg-hitl)"/>
+            <path d="M 180 86 V 112" marker-end="url(#lg-hitl)"/>
+            <!-- No → END 顶边（末段 ↓ 垂直） -->
+            <path d="M 158 122 H 48 V 158" marker-end="url(#lg-hitl)"/>
+            <!-- Yes → Human 顶边（末段 ↓ 垂直） -->
+            <path d="M 180 132 V 158" marker-end="url(#lg-hitl)"/>
+            <!-- reject → END 右边（末段 ← 水平） -->
+            <path d="M 144 171 H 84" marker-end="url(#lg-hitl)"/>
+            <!-- approve → tools 左边（末段 → 水平） -->
+            <path d="M 216 171 H 276" marker-end="url(#lg-hitl)"/>
+            <!-- 回环 → model 右边（末段 ← 水平） -->
+            <path d="M 348 171 H 354 V 72 H 215" stroke-dasharray="4 3" marker-end="url(#lg-hitl)"/>
+          </g>
+          <ellipse cx="180" cy="20" rx="38" ry="12" class="d-box" stroke="currentColor"/><text x="180" y="24" text-anchor="middle" font-size="10" font-weight="600">START</text>
+          <rect x="145" y="58" width="70" height="28" rx="2" class="d-box" stroke="currentColor"/><text x="180" y="76" text-anchor="middle" font-size="11">model</text>
+          <polygon points="180,112 158,122 180,132 202,122" class="d-box" stroke="currentColor"/><text x="180" y="125" text-anchor="middle" font-size="8">tools?</text>
+          <rect x="12" y="158" width="72" height="26" rx="2" class="d-box" stroke="currentColor"/><text x="48" y="175" text-anchor="middle" font-size="10">END</text>
+          <rect x="144" y="158" width="72" height="26" rx="2" class="d-box-hi" stroke="currentColor" stroke-dasharray="4 2"/><text x="180" y="175" text-anchor="middle" font-size="8" font-weight="600">Human 审批</text>
+          <rect x="276" y="158" width="72" height="26" rx="2" class="d-box" stroke="currentColor"/><text x="312" y="175" text-anchor="middle" font-size="10">tools</text>
+          <text x="98" y="118" font-size="7" opacity=".6">No</text>
+          <text x="188" y="144" font-size="7" opacity=".6">Yes</text>
+          <text x="108" y="166" font-size="7" opacity=".55">reject</text>
+          <text x="248" y="166" font-size="7" opacity=".55">approve</text>
+          <text x="328" y="108" font-size="7" opacity=".55">回 model</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§4 · interrupt_before 审批</div><div>16 / 19</div></div>
+</section>
+
+<!-- 17 §4 · 选型 -->
+<section class="slide light slide-compact" data-slide-id="sec4-compare">
+  <div class="chrome"><div>§4 · 何时上图</div><div>17 / 19</div></div>
+  <div class="frame" style="gap:.8vh">
+    <div data-anim>
+      <div class="kicker">LangChain vs LangGraph</div>
+      <h2 class="h-xl">四大能力 · 选型建议</h2>
+    </div>
+    <div class="sec4-compare-grid" data-anim>
+      <div>
+        <div class="rowline" style="grid-template-columns:1fr 2fr;padding:.9vh 0">
+          <div class="k" style="font-size:max(13px,1.02vw)">LangChain</div>
+          <div class="v" style="font-size:max(12px,.88vw)">组件 + LCEL 固定 DAG · create_agent 覆盖简单 Tool 循环</div>
+        </div>
+        <div class="rowline" style="grid-template-columns:1fr 2fr;padding:.9vh 0">
+          <div class="k" style="font-size:max(13px,1.02vw)">LangGraph</div>
+          <div class="v" style="font-size:max(12px,.88vw)">显式状态图 · 循环/分支/持久化/HITL · 生产 Agent 编排</div>
+        </div>
+        <p class="callout" style="margin-top:1vh;padding:1vh 1vw;font-size:max(12px,.9vw)">需要<strong>可恢复会话</strong>、<strong>人工审批</strong>或<strong>Multi-Agent 并行</strong>时上 LangGraph；其余优先 create_agent。</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1vw;margin-top:1vh">
+          <div class="cap-block"><div class="t">StateGraph</div><div class="d">01 · 建模基础</div></div>
+          <div class="cap-block"><div class="t">ReAct 图</div><div class="d">03 · Tool 循环</div></div>
+          <div class="cap-block"><div class="t">Checkpoint</div><div class="d">02 · 多轮记忆</div></div>
+          <div class="cap-block"><div class="t">HITL</div><div class="d">04 · 敏感审批</div></div>
+        </div>
+      </div>
+      <div class="sec4-diag">
+        <p class="diag-label">Fig 4e · Multi-Agent · 09_deep_research/</p>
+        <div class="diag-box">
+          <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg" aria-label="Multi-Agent Supervisor">
+            <defs><marker id="lg-ma" markerWidth="7" markerHeight="7" refX="5.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor" opacity=".85"/></marker></defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.1">
+              <path d="M 160 38 V 52" marker-end="url(#lg-ma)"/>
+              <path d="M 142 80 V 92 H 52 V 104" marker-end="url(#lg-ma)"/>
+              <path d="M 160 80 V 104" marker-end="url(#lg-ma)"/>
+              <path d="M 178 80 V 92 H 268 V 104" marker-end="url(#lg-ma)"/>
+              <path d="M 52 132 V 136 H 160 V 148" marker-end="url(#lg-ma)"/>
+              <path d="M 268 132 V 136 H 160 V 148" marker-end="url(#lg-ma)"/>
+            </g>
+            <rect x="110" y="52" width="100" height="28" rx="2" class="d-box-hi" stroke="currentColor"/><text x="160" y="70" text-anchor="middle" font-size="10" font-weight="600">Supervisor</text>
+            <rect x="12" y="104" width="80" height="28" rx="2" class="d-box" stroke="currentColor"/><text x="52" y="122" text-anchor="middle" font-size="9">Researcher</text>
+            <rect x="120" y="104" width="80" height="28" rx="2" class="d-box" stroke="currentColor"/><text x="160" y="122" text-anchor="middle" font-size="9">Writer</text>
+            <rect x="228" y="104" width="80" height="28" rx="2" class="d-box" stroke="currentColor"/><text x="268" y="122" text-anchor="middle" font-size="9">Reviewer</text>
+            <rect x="100" y="148" width="120" height="24" rx="2" class="d-box" stroke="currentColor"/><text x="160" y="164" text-anchor="middle" font-size="9">Coordinated Output</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><div>§4 · 选型 · Multi-Agent 见 09_deep_research/</div><div>17 / 19</div></div>
+</section>
+
+<!-- 15 Closing -->
+<section class="slide hero light slide-compact" data-slide-id="closing">
+  <div class="chrome"><div>Summary</div><div>19 / 19</div></div>
+  <div class="frame" style="display:grid;gap:3vh;align-content:center;min-height:82vh">
+    <div class="kicker" data-anim>Takeaway</div>
+    <h1 class="h-hero" style="font-size:6.5vw;line-height:1.15" data-anim>组件拼应用<br>状态图跑 Agent</h1>
+    <p class="lead" style="max-width:55vw" data-anim>LangChain 解决「怎么拼」· LangGraph 解决「怎么循环」· LangSmith 解决「怎么观测」</p>
+    <div class="meta-row" data-anim><span>langchain_learning</span><span>·</span><span>Q&amp;A</span></div>
+  </div>
+  <div class="foot"><div>感谢 · 欢迎 Demo 讨论</div><div>— 2026 —</div></div>
+</section>
+
+<div id="nav"></div>
+
+<!-- 演讲备注：每页一条，id 必须与 section[data-slide-id] 一致。见 references/presenter-mode.md -->
+<script>
+const SPEAKER_NOTES = [
+  { id:'cover', title:'封面', section:'开场', minutes:0.4,
+    purpose:'交代分享结构：定位→模块→LangChain→LangGraph',
+    talk:['右侧目录对应四章结构，可先扫一眼','本仓库示例代码可对照运行','按 P 进入演讲者模式看备注'],
+    transition:'第一章：LangChain 解决什么问题' },
+  { id:'sec1-divider', title:'第一章', section:'§1 LangChain 是什么', minutes:0.3,
+    purpose:'章节过渡',
+    talk:['先讲为什么需要框架，再讲模块和原理','避免一上来堆 API','强调对照官方 docs'],
+    transition:'展开定位与四大工程痛点' },
+  { id:'sec1-problems', title:'定位与痛点', section:'§1 LangChain 是什么', minutes:1.8,
+    purpose:'说明 LangChain 在 AI 工程栈中的位置',
+    talk:['强调开源指 langchain / langchain-core 等 MIT pip 包，不是整条商业产品线','定位是 Agent + LLM 应用层抽象，不是替代模型','LangSmith 可观测、LangGraph 编排是互补层，右图是能力栈收敛'],
+    transition:'知道解决什么问题后，看生态里有哪些模块' },
+  { id:'sec2-divider', title:'第二章', section:'§2 产品矩阵', minutes:0.3,
+    purpose:'章节过渡',
+    talk:['LangChain 是一系列产品，不是单个 pip 包','与官方 product 矩阵区分：这里是 pip 包层'],
+    transition:'模块分工一张图讲清' },
+  { id:'sec2-modules', title:'产品矩阵', section:'§2 产品矩阵', minutes:2,
+    purpose:'讲清 core / langchain / langgraph / langsmith 分工',
+    talk:['core 是最小抽象，community 是集成','LangGraph 构建在 LangChain 组件之上','LangSmith 生产调试必备，左表右图对照讲'],
+    transition:'进入第三章 LangChain 组件架构' },
+  { id:'sec3-divider', title:'第三章', section:'§3 LangChain', minutes:0.3,
+    purpose:'章节过渡，预告 3.1 官方架构 + 3.2 四模式',
+    talk:['3.1 严格对照 component-architecture 页面','3.2 四个模式是工程实践层'],
+    transition:'先看官方 Component Categories 七大类' },
+  { id:'sec3-1-categories', title:'Component Categories', section:'§3.1 组件架构', minutes:1.5,
+    purpose:'逐行过官方七大类别表',
+    talk:['Models 含 Embedding，Retrievers 专指检索器','Document processing 与 Vector Stores 分工不同','Agents 类别强调非确定性工作流'],
+    transition:'类别清楚后，看组件如何连接成生态图' },
+  { id:'sec3-1-architecture', title:'Core Ecosystem', section:'§3.1 组件架构', minutes:2,
+    purpose:'对照官方 mermaid 讲五层及 Agents 四条连线',
+    talk:['按标注箭头讲：Agents→Model/Tools/Retrievers/Memory','Tool results 明确回环到 Chat models','Generation 层 Context 自 Retrieval 注入'],
+    transition:'三类 Common Patterns 是组件的典型组合' },
+  { id:'sec3-1-patterns', title:'Common Patterns', section:'§3.1 组件架构', minutes:2,
+    purpose:'对照官方 RAG / Agent / Multi-Agent 三图',
+    talk:['RAG：Question 和 Docs 双输入 Chat model','Agent：Need tool? 是官方决策节点','Multi-Agent：Supervisor 汇聚 Results 再输出'],
+    transition:'进入 3.2 四大底层编排模式' },
+  { id:'sec3-2-overview', title:'四模式总览', section:'§3.2 底层模式', minutes:1.8,
+    purpose:'每个模式对应 LangChain 底层 API',
+    talk:['Chaining = RunnableSequence + 管道符','Routing = RunnableBranch 条件分发','Tool = bind_tools + ToolMessage 循环','Reflection = 双 Chain + LangGraph 回环'],
+    transition:'下一页用流程图展开 Chaining 与 Routing' },
+  { id:'sec3-2-chain-route', title:'Chaining 与 Routing', section:'§3.2 底层模式', minutes:2,
+    purpose:'讲清固定流水线与条件分发',
+    talk:['Chaining 用 LCEL 管道符，见 02-1','Routing 用 RunnableBranch，见 02-5','路由是意图分类后的 Chain 选择'],
+    transition:'Tool Use 和 Reflection 是 Agent 核心' },
+  { id:'sec3-2-tool-reflect', title:'Tool 与 Reflection', section:'§3.2 底层模式', minutes:2.2,
+    purpose:'讲 Tool Calling 循环与自我反思闭环',
+    talk:['Tool：LLM 不执行代码，只出 tool_calls','建议团队手写一遍 05-2 bind_tools','Reflection：生成-评判-修正，supervisor 决定是否继续调研'],
+    transition:'第四章：当这些模式需要显式状态机时' },
+  { id:'sec4-divider', title:'第四章', section:'§4 LangGraph', minutes:0.3,
+    purpose:'章节过渡，预告四大核心能力',
+    talk:['Chain 难表达循环，LangGraph 用 StateGraph 补这一层','四张卡片对应接下来 13–16 页，17 页讲选型'],
+    transition:'第 13 页：State + Node + Edge 三要素' },
+  { id:'sec4-stategraph', title:'StateGraph 三要素', section:'§4 LangGraph', minutes:1.8,
+    purpose:'讲 State / Node / Edge，对照 01_state_graph.py',
+    talk:['左文右图：State 是共享数据结构，Node 只返回部分更新','右图线性流程 count→upper，旁注 State 字段','这是所有 LangGraph 图的基础'],
+    transition:'下一页：ReAct 条件循环' },
+  { id:'sec4-react', title:'ReAct 循环', section:'§4 LangGraph', minutes:1.8,
+    purpose:'讲 model↔tools 条件边，对照 03_tool_node.py',
+    talk:['tools_condition 是 prebuilt 条件边','有 tool_calls 走 tools，否则 END','tools 执行完回 model，形成 ReAct 闭环'],
+    transition:'持久化：Checkpoint + thread_id' },
+  { id:'sec4-checkpoint', title:'Checkpoint', section:'§4 LangGraph', minutes:1.6,
+    purpose:'讲 MemorySaver 与 thread_id，对照 02_chatbot.py',
+    talk:['compile 时传 checkpointer=MemorySaver()','同一 thread_id 多次 invoke 共享 messages','右图三次 invoke 最终能答出名字和喜好'],
+    transition:'生产必备：Human-in-the-loop' },
+  { id:'sec4-hitl', title:'HITL 审批', section:'§4 LangGraph', minutes:1.8,
+    purpose:'讲 interrupt_before，对照 04_human_in_loop.py',
+    talk:['interrupt_before 在进 tools 前暂停，不是图内节点','第一次 invoke 返回待审批 state','审批后 invoke(None) 从 checkpoint 续跑'],
+    transition:'最后一页：何时上图 + Multi-Agent' },
+  { id:'sec4-compare', title:'选型建议', section:'§4 LangGraph', minutes:1.5,
+    purpose:'LangChain vs LangGraph 选型 + Multi-Agent 示意',
+    talk:['简单 Tool 循环 create_agent 够用','需要记忆/审批/多 Agent 时上 LangGraph','右图 Supervisor 对应 09_deep_research'],
+    transition:'收束三条产品线分工' },
+  { id:'closing', title:'结束', section:'收束', minutes:0.8,
+    purpose:'金句收束，开放 Q&A',
+    talk:['拼组件 LangChain，跑循环 LangGraph，看 Trace LangSmith','官方文档 component-architecture 建议团队收藏'],
+    transition:'演示结束' }
+];
+window.__SPEAKER_NOTES__ = SPEAKER_NOTES;
+
+
+
+
+
+</script>
+
+<script>
+/* =============== WebGL 双背景 ===============
+   深色页：Holographic Dispersion（全息色散 · 钛金暗流）—— 彩虹微扰、鼠标径向涟漪
+   浅色页：Spiral Vortex（旋转涡流 · 银色珍珠）—— domain-warp 流动、无中心
+   修改风格请参考 references/webgl-backgrounds.md
+*/
+const VS = `attribute vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}`;
+
+const FS_DARK = `precision highp float;
+uniform vec2 u_resolution;uniform float u_time;uniform vec2 u_mouse;
+vec3 palette(float t,vec3 a,vec3 b,vec3 c,vec3 d){return a+b*cos(6.28318*(c*t+d));}
+void main(){
+  vec2 uv=gl_FragCoord.xy/u_resolution.xy;
+  vec2 p=uv*2.0-1.0;p.x*=u_resolution.x/u_resolution.y;
+  vec2 m=u_mouse*2.0-1.0;m.x*=u_resolution.x/u_resolution.y;
+  float md=length(p-m);
+  float mr=sin(md*15.0-u_time*4.0)*exp(-md*3.0);p+=mr*0.08;
+  vec2 p0=p;
+  for(float i=1.0;i<4.0;i++){
+    p.x+=0.1/i*sin(i*3.0*p.y+u_time*0.4)+0.05;
+    p.y+=0.1/i*cos(i*2.0*p.x+u_time*0.3)-0.05;
+  }
+  float r=length(p);float ang=atan(p.y,p.x);
+  vec3 a=vec3(0.12,0.12,0.13);
+  vec3 b=vec3(0.03,0.04,0.05);
+  vec3 c=vec3(1.0,1.0,1.0);
+  vec3 d=vec3(0.1,0.2,0.4);
+  vec3 col=palette(r*1.5+p0.x*0.5+u_time*0.1,a,b,c,d);
+  float disp=sin(r*25.0-u_time*1.5+ang*2.0)*0.5+0.5;
+  col+=vec3(disp*0.015,disp*0.01,disp*0.02);
+  float hi=pow(sin(p.x*4.0+p.y*3.0+u_time)*0.5+0.5,8.0);
+  col+=hi*0.08;
+  vec3 base=vec3(0.05,0.05,0.06);
+  col=mix(base,col,0.85);
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+const FS_LIGHT = `precision highp float;
+uniform vec2 u_resolution;uniform float u_time;uniform vec2 u_mouse;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){
+  vec2 i=floor(p),f=fract(p);
+  float a=hash(i),b=hash(i+vec2(1,0));
+  float c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
+  vec2 u=f*f*(3.0-2.0*f);
+  return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;
+}
+float fbm(vec2 p){
+  float v=0.0,a=0.5;
+  mat2 m=mat2(0.80,0.60,-0.60,0.80);
+  for(int i=0;i<5;i++){v+=a*noise(p);p=m*p*2.02;a*=0.5;}
+  return v;
+}
+void main(){
+  vec2 uv=gl_FragCoord.xy/u_resolution.xy;
+  vec2 p=uv;p.x*=u_resolution.x/u_resolution.y;
+  vec2 m=u_mouse;m.x*=u_resolution.x/u_resolution.y;
+  vec2 md=p-m;float dl=length(md);
+  p+=normalize(md+vec2(0.0001))*exp(-dl*5.0)*0.03;
+  vec2 q=vec2(fbm(p*1.8+u_time*0.07),fbm(p*1.8+vec2(5.2,1.3)+u_time*0.06));
+  vec2 r=vec2(fbm(p*2.0+q*1.3+vec2(1.7,9.2)+u_time*0.05),
+              fbm(p*2.0+q*1.3+vec2(8.3,2.8)+u_time*0.04));
+  float f=fbm(p*2.2+r*1.5);
+  vec3 silverDark=vec3(0.86,0.85,0.84);
+  vec3 paper=vec3(0.955,0.945,0.925);
+  vec3 col=mix(silverDark,paper,f);
+  float ph=r.x*2.2+u_time*0.35;
+  col+=vec3(0.78,0.62,0.92)*sin(ph)*0.055;
+  col+=vec3(0.55,0.72,0.95)*sin(ph*0.8+2.0)*0.05;
+  float hl=smoothstep(0.48,0.92,f);
+  col+=hl*0.06;
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+const mouse={x:0.5,y:0.5};
+addEventListener('mousemove',e=>{mouse.x=e.clientX/innerWidth;mouse.y=e.clientY/innerHeight});
+
+function bootGL(canvasId, fsSrc){
+  const canvas=document.getElementById(canvasId);
+  const gl=canvas.getContext('webgl',{alpha:false,antialias:true});
+  if(!gl) return ()=>false;
+  const mk=(t,s)=>{const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);return sh};
+  const prog=gl.createProgram();
+  gl.attachShader(prog,mk(gl.VERTEX_SHADER,VS));
+  gl.attachShader(prog,mk(gl.FRAGMENT_SHADER,fsSrc));
+  gl.linkProgram(prog);gl.useProgram(prog);
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+  const pos=gl.getAttribLocation(prog,'position');
+  gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+  const lRes=gl.getUniformLocation(prog,'u_resolution');
+  const lT=gl.getUniformLocation(prog,'u_time');
+  const lM=gl.getUniformLocation(prog,'u_mouse');
+  const resize=()=>{
+    const d=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=innerWidth*d;canvas.height=innerHeight*d;
+    gl.viewport(0,0,canvas.width,canvas.height);
+  };
+  addEventListener('resize',resize);resize();
+  return (tSec)=>{
+    gl.uniform2f(lRes,canvas.width,canvas.height);
+    gl.uniform1f(lT,tSec);
+    gl.uniform2f(lM,mouse.x,1-mouse.y);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+    return true;
+  };
+}
+let drawDark=null, drawLight=null, glRAF=0, glT0=Date.now();
+function startGL(){
+  if(window.__lowPowerMode || glRAF) return;
+  if(!drawDark) drawDark=bootGL('bg-dark',FS_DARK);
+  if(!drawLight) drawLight=bootGL('bg-light',FS_LIGHT);
+  glT0=Date.now();
+  function loop(){
+    if(window.__lowPowerMode){glRAF=0;return;}
+    const t=(Date.now()-glT0)/1000;
+    drawDark(t);drawLight(t);
+    glRAF=requestAnimationFrame(loop);
+  }
+  glRAF=requestAnimationFrame(loop);
+}
+function stopGL(){
+  if(glRAF) cancelAnimationFrame(glRAF);
+  glRAF=0;
+}
+startGL();
+addEventListener('ppt-low-power-change', e=>{e.detail.on ? stopGL() : startGL();});
+
+// =============== 导航（翻页 / 圆点 / 键盘 / 滚轮 / 触屏） ===============
+const deck=document.getElementById('deck');
+const slides=deck.querySelectorAll('.slide');
+const nav=document.getElementById('nav');
+let idx=0,total=slides.length,lock=false;
+
+// 关键：矫正 deck 宽度为 total * 100vw，否则翻页会错位
+deck.style.width=(total*100)+'vw';
+
+slides.forEach((s,i)=>{
+  const b=document.createElement('button');
+  b.className='dot';b.dataset.i=i;b.setAttribute('aria-label','Page '+(i+1));
+  b.onclick=()=>go(i);
+  nav.appendChild(b);
+});
+
+function go(n,opts={}){
+  if(lock&&!opts.force)return;
+  idx=Math.max(0,Math.min(total-1,n));
+  window.__currentSlideIndex = idx;
+  deck.style.transform=`translateX(${-idx*100}vw)`;
+  nav.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===idx));
+  /* 主题切换：优先读 data-theme，其次从 class（light/dark）推断 */
+  const el=slides[idx];
+  const th=el.dataset.theme || (el.classList.contains('light')?'light':(el.classList.contains('dark')?'dark':'dark'));
+  document.body.classList.toggle('light-bg',th==='light');
+  /* 动效：翻页过渡中段触发当前页的入场动画（由 motion-boot 注册） */
+  if(window.__playSlide) setTimeout(()=>window.__playSlide(idx), 450);
+  window.__pptPresenter?.onSlideChange(idx);
+  if(!opts.force){lock=true;setTimeout(()=>lock=false,700);}
+}
+
+/* =============== ESC 索引视图 =============== */
+let overviewOn=false;
+const ov=document.createElement('div');
+ov.id='overview';
+ov.style.cssText='position:fixed;inset:0;z-index:100;background:rgba(var(--ink-rgb),.92);backdrop-filter:blur(12px);display:none;overflow-y:auto;padding:4vh 4vw';
+document.body.appendChild(ov);
+
+function buildOverview(){
+  ov.innerHTML='';
+  const grid=document.createElement('div');
+  grid.style.cssText='display:grid;grid-template-columns:repeat(4,1fr);gap:2vh 1.6vw;max-width:90vw;margin:0 auto';
+  slides.forEach((s,i)=>{
+    const card=document.createElement('div');
+    card.style.cssText='cursor:pointer;border-radius:6px;overflow:hidden;border:2px solid '+(i===idx?'rgba(var(--paper-rgb),.8)':'rgba(var(--paper-rgb),.15)')+';transition:border-color .2s';
+    card.onmouseenter=()=>card.style.borderColor='rgba(var(--paper-rgb),.6)';
+    card.onmouseleave=()=>card.style.borderColor=i===idx?'rgba(var(--paper-rgb),.8)':'rgba(var(--paper-rgb),.15)';
+    const wrap=document.createElement('div');
+    wrap.style.cssText='width:100%;aspect-ratio:16/9;overflow:hidden;position:relative;pointer-events:none;background:'+(s.classList.contains('light')?'var(--paper)':'var(--ink)');
+    const clone=s.cloneNode(true);
+    clone.style.cssText='width:100vw;height:100vh;transform:scale('+(1/4.5)+');transform-origin:top left;position:absolute;top:0;left:0;pointer-events:none';
+    wrap.appendChild(clone);
+    const label=document.createElement('div');
+    label.style.cssText='padding:6px 10px;font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--paper);opacity:.7';
+    label.textContent=window.__pptPresenter?.slideLabel(i) || ((i+1)+' / '+total);
+    card.appendChild(wrap);
+    card.appendChild(label);
+    card.onclick=()=>{toggleOverview();go(i)};
+    grid.appendChild(card);
+  });
+  ov.appendChild(grid);
+}
+
+function toggleOverview(){
+  overviewOn=!overviewOn;
+  if(overviewOn){buildOverview();ov.style.display='block';}
+  else{ov.style.display='none';}
+}
+
+/* =============== 演讲者模式 / 观众屏同步 =============== */
+window.__pptPresenter=(()=>{
+  const query=new URLSearchParams(location.search);
+  const requestedMode=query.get('mode')||'deck';
+  const originalTitle=document.title;
+  const notes=()=>Array.isArray(window.__SPEAKER_NOTES__)?window.__SPEAKER_NOTES__:[];
+  const slideId=i=>slides[i]?.dataset.slideId||`slide-${String(i+1).padStart(2,'0')}`;
+  const storageKey=name=>`guizang-ppt-${name}:${location.pathname}`;
+  let mode='deck',session=query.get('session')||Math.random().toString(36).slice(2),audienceWindow=null;
+  let channel=null,transportReady=false,popupBlocked=false,audienceOpenedAt=0,lastAckAt=0,lastAckIndex=-1,lastAckSeq=-1,seq=0,lastPingAt=0;
+  let renderedNoteId='',saveTimer=0,noteSize=Number(localStorage.getItem('guizang-ppt-note-size')||17),presenterFrameObserver=null;
+  let elapsed=0,timerRunning=false,timerStartedAt=0,timedSlideIndex=idx,slideTimerStartedAt=0,slideElapsed=Array(total).fill(0);
+  let rehearsalActive=false,presenterOverviewOn=false,lowPowerBeforePresenter=window.__lowPowerMode;
+  let layoutMode=localStorage.getItem(storageKey('layout'))||'balanced';
+  let autoEnabled=localStorage.getItem(storageKey('auto-enabled'))==='1';
+  let autoGlobalSeconds=Math.max(0,Number(localStorage.getItem(storageKey('auto-seconds'))||0));
+  let autoDeadline=0,autoRemainingMs=0;
+  let screenMode='normal',audienceFrozen=false;
+  let annotationTool='none',annotationPointerDown=false,annotationStart=null,draftCircle=null,circles=[],audienceCircles=[];
+  let laserPoint=null,audienceLaser=null,laserHideAt=0,audienceLaserHideAt=0,lastLaserSent=0;
+  const seenNonces=[],seenNonceSet=new Set();
+  const syncKey=()=>`guizang-ppt-sync:${location.pathname}:${session}`;
+  const channelName=()=>`guizang-ppt:${location.pathname}:${session}`;
+
+  function noteAt(i){
+    const id=slideId(i);
+    return notes().find(n=>n.id===id)||{id,title:slides[i]?.dataset.title||`第 ${i+1} 页`,purpose:'—',talk:[],transition:''};
+  }
+  function slideLabel(i){return `${i+1} / ${total} · ${noteAt(i).title||slideId(i)}`;}
+  function escapeHTML(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+  function valueLines(value){
+    if(Array.isArray(value))return value.filter(Boolean).map(x=>`• ${x}`).join('\n');
+    return value?String(value):'';
+  }
+  function generatedNote(n){
+    const parts=[];
+    if(Array.isArray(n.talk)&&n.talk.length)parts.push(`【讲述要点】\n${valueLines(n.talk)}`);
+    if(n.transition)parts.push(`【转场】\n${n.transition}`);
+    const optional=[['舞台提示',n.cue],['互动',n.interaction],['表达提示',n.delivery],['翻页时机',n.advance],['备用方案',n.fallback],['读音提醒',n.pronunciation]];
+    optional.forEach(([label,value])=>{const text=valueLines(value);if(text)parts.push(`【${label}】\n${text}`);});
+    return parts.join('\n\n')||'—';
+  }
+  function noteStorageKey(id){return `guizang-ppt-note:${location.pathname}:${id}`;}
+  function loadNoteValue(id,i,n){
+    const saved=localStorage.getItem(noteStorageKey(id));
+    if(saved!==null)return saved;
+    const prefix=window.__PPT_LEGACY_NOTE_KEY__;
+    if(prefix){
+      const legacy=localStorage.getItem(`${prefix}:${i}`);
+      if(legacy!==null){localStorage.setItem(noteStorageKey(id),legacy);return legacy;}
+    }
+    return generatedNote(n);
+  }
+  function frameUrl(targetMode,i){
+    const url=new URL(location.href);url.hash='';
+    url.searchParams.set('mode',targetMode);url.searchParams.set('session',session);url.searchParams.set('slide',String(i+1));
+    return url.href;
+  }
+  function postPreviewGoto(frame,i){
+    try{frame.contentWindow?.postMessage({__guizangPptSync:1,session,role:'presenter',type:'preview-goto',index:i},'*');}catch(e){}
+  }
+  function updatePreviewFrame(frame,i){
+    frame.dataset.slide=String(i);
+    if(!frame.dataset.previewBound){frame.dataset.previewBound='1';frame.addEventListener('load',()=>postPreviewGoto(frame,Number(frame.dataset.slide)));}
+    if(!frame.getAttribute('src'))frame.src=frameUrl('preview',i);else postPreviewGoto(frame,i);
+  }
+  function plannedMsAt(i){
+    const minutes=Number(noteAt(i).minutes);
+    return Number.isFinite(minutes)&&minutes>0?minutes*60000:null;
+  }
+  function totalPlannedMs(){
+    const values=Array.from({length:total},(_,i)=>plannedMsAt(i));
+    return values.length&&values.every(Number.isFinite)?values.reduce((sum,x)=>sum+x,0):null;
+  }
+  function sectionInfo(i){
+    const name=String(noteAt(i).section||'').trim();
+    if(!name)return null;
+    let first=i,last=i;
+    while(first>0&&String(noteAt(first-1).section||'').trim()===name)first--;
+    while(last<total-1&&String(noteAt(last+1).section||'').trim()===name)last++;
+    const targets=[];for(let x=first;x<=last;x++)targets.push(plannedMsAt(x));
+    const planned=targets.every(Number.isFinite)?targets.reduce((sum,x)=>sum+x,0):null;
+    const used=slideElapsed.slice(first,last+1).reduce((sum,x)=>sum+x,0)+(timerRunning&&timedSlideIndex>=first&&timedSlideIndex<=last?Date.now()-slideTimerStartedAt:0);
+    return{name,position:i-first+1,count:last-first+1,planned,used};
+  }
+  function durationText(ms){
+    const value=Math.max(0,Math.round(Number(ms)||0)),seconds=Math.floor(value/1000);
+    const hours=Math.floor(seconds/3600),minutes=Math.floor((seconds%3600)/60),secs=seconds%60;
+    return hours?`${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`:`${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+  }
+  function signedDuration(ms){return `${ms>=0?'+':'−'}${durationText(Math.abs(ms))}`;}
+  function clockTime(timestamp){return new Date(timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+
+  function fitFrame(frame){
+    const viewport=frame?.closest('.ppt-frame-viewport');
+    if(!viewport)return;
+    const availableWidth=viewport.clientWidth,availableHeight=viewport.clientHeight;
+    if(!availableWidth||!availableHeight)return;
+    const width=Math.min(availableWidth,availableHeight*(16/9)),height=width*(9/16);
+    frame.style.width=`${width}px`;frame.style.height=`${height}px`;
+    if(frame.id==='ppt-current-frame')sizeInk(document.getElementById('ppt-presenter-ink'),width,height);
+  }
+  function fitPresenterFrames(){
+    fitFrame(document.getElementById('ppt-current-frame'));
+    fitFrame(document.getElementById('ppt-next-frame'));
+  }
+  function sizeInk(canvas,width,height){
+    if(!canvas||!width||!height)return;
+    canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;
+    const dpr=Math.min(devicePixelRatio||1,2),pixelWidth=Math.round(width*dpr),pixelHeight=Math.round(height*dpr);
+    if(canvas.width!==pixelWidth||canvas.height!==pixelHeight){canvas.width=pixelWidth;canvas.height=pixelHeight;}
+  }
+  function drawEllipse(ctx,circle,width,height,alpha=1){
+    const x1=circle.x1*width,y1=circle.y1*height,x2=circle.x2*width,y2=circle.y2*height;
+    ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle='#ff4f59';ctx.lineWidth=Math.max(3,width*.004);ctx.lineCap='round';
+    ctx.beginPath();ctx.ellipse((x1+x2)/2,(y1+y2)/2,Math.abs(x2-x1)/2,Math.abs(y2-y1)/2,0,0,Math.PI*2);ctx.stroke();ctx.restore();
+  }
+  function drawInk(canvas,list,laser,draft){
+    if(!canvas)return;const width=canvas.clientWidth,height=canvas.clientHeight;if(!width||!height)return;
+    sizeInk(canvas,width,height);const dpr=canvas.width/width,ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
+    (list||[]).forEach(circle=>drawEllipse(ctx,circle,width,height));
+    if(draft)drawEllipse(ctx,draft,width,height,.72);
+    if(laser){
+      const x=laser.x*width,y=laser.y*height,r=Math.max(6,width*.007);
+      const glow=ctx.createRadialGradient(x,y,0,x,y,r*2.8);glow.addColorStop(0,'rgba(255,255,255,.98)');glow.addColorStop(.2,'rgba(255,64,72,.98)');glow.addColorStop(1,'rgba(255,64,72,0)');
+      ctx.fillStyle=glow;ctx.beginPath();ctx.arc(x,y,r*2.8,0,Math.PI*2);ctx.fill();
+    }
+  }
+  function renderInks(){
+    const now=Date.now();if(now>laserHideAt)laserPoint=null;if(now>audienceLaserHideAt)audienceLaser=null;
+    drawInk(document.getElementById('ppt-presenter-ink'),circles,laserPoint,draftCircle);
+    drawInk(document.getElementById('ppt-audience-ink'),audienceCircles,audienceLaser,null);
+  }
+  function setAnnotationTool(tool){
+    annotationTool=annotationTool===tool?'none':tool;annotationPointerDown=false;draftCircle=null;
+    const canvas=document.getElementById('ppt-presenter-ink');canvas?.classList.toggle('is-active',annotationTool!=='none');
+    document.querySelectorAll('[data-ppt-tool]').forEach(button=>button.classList.toggle('is-active',button.dataset.pptTool===annotationTool));
+    renderInks();
+  }
+  function annotationPoint(event){
+    const canvas=event.currentTarget,rect=canvas.getBoundingClientRect();
+    return{x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};
+  }
+  function onAnnotationPointerDown(event){
+    if(annotationTool!=='circle')return;event.preventDefault();annotationPointerDown=true;annotationStart=annotationPoint(event);draftCircle={x1:annotationStart.x,y1:annotationStart.y,x2:annotationStart.x,y2:annotationStart.y};event.currentTarget.setPointerCapture?.(event.pointerId);renderInks();
+  }
+  function onAnnotationPointerMove(event){
+    if(annotationTool==='laser'){
+      const point=annotationPoint(event);laserPoint=point;laserHideAt=Date.now()+650;
+      if(Date.now()-lastLaserSent>32){lastLaserSent=Date.now();emit({type:'laser',index:idx,point},{persist:false});}renderInks();return;
+    }
+    if(annotationTool==='circle'&&annotationPointerDown&&draftCircle){const point=annotationPoint(event);draftCircle.x2=point.x;draftCircle.y2=point.y;renderInks();}
+  }
+  function onAnnotationPointerUp(event){
+    if(annotationTool!=='circle'||!annotationPointerDown||!draftCircle)return;event.preventDefault();annotationPointerDown=false;
+    const circle={...draftCircle};draftCircle=null;
+    if(Math.abs(circle.x2-circle.x1)>.012&&Math.abs(circle.y2-circle.y1)>.012){circles.push(circle);emit({type:'circle',index:idx,circle});}
+    renderInks();
+  }
+  function onAnnotationPointerLeave(){
+    if(annotationTool==='laser'){laserPoint=null;emit({type:'laser',index:idx,point:null},{persist:false});renderInks();}
+  }
+  function clearAnnotations(broadcast=true){circles=[];draftCircle=null;laserPoint=null;if(broadcast)emit({type:'clear',index:idx});renderInks();}
+
+  function buildPresenterOverview(){
+    const grid=document.getElementById('ppt-presenter-overview-grid');if(!grid)return;grid.innerHTML='';
+    slides.forEach((slide,i)=>{
+      const n=noteAt(i),button=document.createElement('button');button.type='button';button.className=`ppt-overview-page${i===idx?' is-current':''}`;
+      button.innerHTML=`<span class="ppt-overview-page-no">${String(i+1).padStart(2,'0')} / ${String(total).padStart(2,'0')}</span><span class="ppt-overview-page-title">${escapeHTML(n.title||slideId(i))}</span><span class="ppt-overview-page-meta"><span>${escapeHTML(n.section||'未分组')}</span><span>${Math.round(((i+1)/total)*100)}%</span></span>`;
+      button.onclick=()=>{togglePresenterOverview(false);go(i,{force:true});};grid.appendChild(button);
+    });
+    requestAnimationFrame(()=>grid.querySelector('.is-current')?.scrollIntoView({block:'nearest',inline:'nearest'}));
+  }
+  function togglePresenterOverview(force){
+    presenterOverviewOn=typeof force==='boolean'?force:!presenterOverviewOn;
+    if(presenterOverviewOn&&annotationTool!=='none')setAnnotationTool('none');
+    const stack=document.querySelector('.ppt-preview-stack'),overview=document.getElementById('ppt-presenter-overview');
+    stack?.classList.toggle('is-overview',presenterOverviewOn);if(overview)overview.hidden=!presenterOverviewOn;
+    const button=document.getElementById('ppt-grid');if(button){button.classList.toggle('is-active',presenterOverviewOn);button.setAttribute('aria-pressed',String(presenterOverviewOn));}
+    if(presenterOverviewOn)buildPresenterOverview();else requestAnimationFrame(fitPresenterFrames);renderAutoState();
+  }
+
+  function mountShell(){
+    if(document.getElementById('ppt-presenter'))return;
+    document.body.insertAdjacentHTML('beforeend',`<div id="ppt-presenter" data-layout="${layoutMode}" aria-label="演讲者视图">
+      <div class="ppt-presenter-top"><div><div class="ppt-presenter-brand">演讲者视图</div><div class="ppt-presenter-meta"><span id="ppt-plan"></span><span id="ppt-section" hidden></span></div></div><div class="ppt-presenter-meta"><span id="ppt-sync" class="ppt-sync" data-state="disconnected" title="表示观众页面的软件同步状态，不代表 HDMI 等物理线缆状态">观众屏 · 未连接</span><button id="ppt-auto-toggle" class="ppt-ui-btn ppt-auto-state" type="button">自动翻页 · 关闭</button><button id="ppt-preflight" class="ppt-ui-btn" type="button">检查</button><button id="ppt-settings" class="ppt-ui-btn" type="button">设置</button><button id="ppt-reopen" class="ppt-ui-btn" type="button">重新打开观众屏</button><button id="ppt-exit" class="ppt-ui-btn" type="button">退出</button></div></div>
+      <div class="ppt-presenter-main"><div class="ppt-preview-stack"><div class="ppt-stage-card"><div class="ppt-stage-label"><span>当前页</span><span class="ppt-annotation-tools"><button id="ppt-grid" class="ppt-ui-btn ppt-grid-btn" type="button" aria-pressed="false" title="宫格选页（Esc）"><span class="ppt-grid-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>宫格</button><button class="ppt-ui-btn" data-ppt-tool="laser" type="button" title="激光笔（L）">激光</button><button class="ppt-ui-btn" data-ppt-tool="circle" type="button" title="圈选（C）">圈选</button><button id="ppt-ink-clear" class="ppt-ui-btn ppt-clear-btn" type="button" title="清除标记（X）">清除</button></span><span id="ppt-current-label"></span></div><div class="ppt-frame-viewport"><iframe id="ppt-current-frame" class="ppt-frame" title="当前页预览"></iframe><canvas id="ppt-presenter-ink" class="ppt-annotation-layer" aria-label="演讲标注层"></canvas></div></div><div class="ppt-stage-card" id="ppt-next-card"><div class="ppt-stage-label"><span>下一页</span><span id="ppt-next-label"></span></div><div class="ppt-frame-viewport"><iframe id="ppt-next-frame" class="ppt-frame ppt-next-frame" title="下一页预览"></iframe></div></div><div id="ppt-presenter-overview" class="ppt-presenter-overview" hidden><div class="ppt-overview-head"><strong>选择页面</strong><button id="ppt-overview-close" class="ppt-ui-btn" type="button">返回预览</button></div><div id="ppt-presenter-overview-grid" class="ppt-overview-grid"></div></div></div>
+      <div class="ppt-notes-card"><div class="ppt-notes-head"><div class="ppt-notes-label">标题</div><div id="ppt-notes-title" class="ppt-notes-title"></div><div class="ppt-purpose-block"><div class="ppt-notes-label">本页目的</div><div id="ppt-notes-purpose" class="ppt-purpose-copy"></div></div><div class="ppt-notes-draft-head"><div><div class="ppt-notes-label">草稿（备注）</div><div id="ppt-note-meta" class="ppt-note-meta"></div></div><span class="ppt-notes-tools"><span id="ppt-saved" class="ppt-saved">已保存</span><button id="ppt-note-smaller" class="ppt-ui-btn" type="button" title="缩小备注字号">A−</button><button id="ppt-note-larger" class="ppt-ui-btn" type="button" title="放大备注字号">A+</button></span></div></div><textarea id="ppt-note-editor" class="ppt-note-editor" spellcheck="false" aria-label="本页演讲备注"></textarea></div></div>
+      <div class="ppt-presenter-bottom"><div class="ppt-time-dashboard"><div class="ppt-time-stat"><span class="ppt-time-label">已进行</span><strong id="ppt-clock" class="ppt-time-value">00:00</strong><span class="ppt-time-hint">总时长</span></div><div class="ppt-time-stat"><span class="ppt-time-label">本页</span><strong id="ppt-slide-clock" class="ppt-time-value">00:00</strong><span id="ppt-slide-plan" class="ppt-time-hint">计划 —</span></div><div id="ppt-slide-status-box" class="ppt-time-stat"><span id="ppt-slide-status-label" class="ppt-time-label">计划</span><strong id="ppt-slide-status" class="ppt-time-value">—</strong><span id="ppt-slide-status-hint" class="ppt-time-hint">未设置</span></div></div><div class="ppt-control-stack"><div class="ppt-controls"><button id="ppt-first" class="ppt-ui-btn" type="button">首页</button><button id="ppt-prev" class="ppt-ui-btn" type="button">上一页</button><button id="ppt-next" class="ppt-ui-btn" type="button">下一页</button><button id="ppt-last" class="ppt-ui-btn" type="button">尾页</button></div><div class="ppt-session-actions"><button id="ppt-timer-toggle" class="ppt-ui-btn" type="button">开始计时</button><button id="ppt-timer-reset" class="ppt-ui-btn" type="button">重置计时</button><button id="ppt-rehearsal" class="ppt-ui-btn" type="button">排练</button></div></div><div class="ppt-page-state"><strong id="ppt-page-count"></strong><span id="ppt-page-percent"></span></div></div>
+      <div id="ppt-dialog" class="ppt-dialog" hidden><div class="ppt-dialog-panel" role="dialog" aria-modal="true"><div class="ppt-dialog-head"><div id="ppt-dialog-title" class="ppt-dialog-title"></div><button id="ppt-dialog-close" class="ppt-ui-btn" type="button">关闭</button></div><div id="ppt-dialog-body" class="ppt-dialog-body"></div></div></div>
+    </div>`);
+    document.getElementById('ppt-reopen').onclick=reopenAudience;
+    document.getElementById('ppt-exit').onclick=exitPresenter;
+    document.getElementById('ppt-preflight').onclick=openPreflight;
+    document.getElementById('ppt-settings').onclick=openSettings;
+    document.getElementById('ppt-first').onclick=()=>go(0,{force:true});
+    document.getElementById('ppt-prev').onclick=()=>go(idx-1,{force:true});
+    document.getElementById('ppt-grid').onclick=()=>togglePresenterOverview();
+    document.getElementById('ppt-overview-close').onclick=()=>togglePresenterOverview(false);
+    document.getElementById('ppt-next').onclick=()=>go(idx+1,{force:true});
+    document.getElementById('ppt-last').onclick=()=>go(idx===total-1?0:total-1,{force:true});
+    document.getElementById('ppt-timer-toggle').onclick=toggleTimer;
+    document.getElementById('ppt-timer-reset').onclick=resetTimer;
+    document.getElementById('ppt-rehearsal').onclick=toggleRehearsal;
+    document.getElementById('ppt-auto-toggle').onclick=toggleAutoAdvance;
+    document.getElementById('ppt-note-smaller').onclick=()=>setNoteSize(noteSize-1);
+    document.getElementById('ppt-note-larger').onclick=()=>setNoteSize(noteSize+1);
+    document.getElementById('ppt-note-editor').addEventListener('input',saveNote);
+    document.querySelectorAll('[data-ppt-tool]').forEach(button=>button.onclick=()=>setAnnotationTool(button.dataset.pptTool));
+    document.getElementById('ppt-ink-clear').onclick=()=>clearAnnotations(true);
+    const ink=document.getElementById('ppt-presenter-ink');
+    ink.addEventListener('pointerdown',onAnnotationPointerDown);ink.addEventListener('pointermove',onAnnotationPointerMove);ink.addEventListener('pointerup',onAnnotationPointerUp);ink.addEventListener('pointercancel',onAnnotationPointerUp);ink.addEventListener('pointerleave',onAnnotationPointerLeave);
+    document.getElementById('ppt-dialog-close').onclick=closeDialog;
+    document.getElementById('ppt-dialog').onclick=event=>{if(event.target.id==='ppt-dialog')closeDialog();};
+    if('ResizeObserver'in window){presenterFrameObserver=new ResizeObserver(()=>requestAnimationFrame(fitPresenterFrames));presenterFrameObserver.observe(document.querySelector('.ppt-preview-stack'));}
+    else addEventListener('resize',fitPresenterFrames);
+    setNoteSize(noteSize,false);applyLayout(layoutMode,false);requestAnimationFrame(fitPresenterFrames);
+  }
+  function updateShell(){
+    if(mode!=='presenter')return;mountShell();
+    const n=noteAt(idx),next=Math.min(idx+1,total-1),id=slideId(idx),editor=document.getElementById('ppt-note-editor');
+    const currentFrame=document.getElementById('ppt-current-frame'),nextFrame=document.getElementById('ppt-next-frame');
+    if(currentFrame.dataset.slide!==String(idx))updatePreviewFrame(currentFrame,idx);
+    if(nextFrame.dataset.slide!==String(next))updatePreviewFrame(nextFrame,next);
+    document.getElementById('ppt-next-card').classList.toggle('is-end',idx===total-1);
+    document.getElementById('ppt-current-label').textContent=`${idx+1} / ${total}`;
+    document.getElementById('ppt-next-label').textContent=idx===total-1?'已到尾页':`${next+1} / ${total}`;
+    document.getElementById('ppt-notes-title').textContent=n.title||`第 ${idx+1} 页`;
+    document.getElementById('ppt-notes-purpose').textContent=n.purpose||'—';
+    const target=plannedMsAt(idx);document.getElementById('ppt-note-meta').textContent=`建议 ${target?(target/60000).toFixed(1):'—'} 分钟 · ${id}`;
+    document.getElementById('ppt-page-count').textContent=`第 ${idx+1} / ${total} 页`;
+    document.getElementById('ppt-page-percent').textContent=`${Math.round(((idx+1)/total)*100)}%`;
+    document.getElementById('ppt-first').disabled=idx===0;document.getElementById('ppt-prev').disabled=idx===0;document.getElementById('ppt-next').disabled=idx===total-1;
+    document.getElementById('ppt-last').textContent=idx===total-1?'重新开始':'尾页';
+    if(renderedNoteId!==id){renderedNoteId=id;editor.value=loadNoteValue(id,idx,n);editor.scrollTop=0;document.getElementById('ppt-saved').textContent='已保存';}
+    if(presenterOverviewOn)buildPresenterOverview();requestAnimationFrame(fitPresenterFrames);renderTimer();updateSyncStatus();
+  }
+  function saveNote(){
+    const saved=document.getElementById('ppt-saved');saved.textContent='保存中…';saved.classList.remove('ppt-saved');clearTimeout(saveTimer);
+    saveTimer=setTimeout(()=>{localStorage.setItem(noteStorageKey(renderedNoteId),document.getElementById('ppt-note-editor').value);saved.textContent='已保存';saved.classList.add('ppt-saved');},300);
+  }
+  function setNoteSize(value,persist=true){noteSize=Math.max(14,Math.min(26,value));document.documentElement.style.setProperty('--ppt-note-size',`${noteSize}px`);if(persist)localStorage.setItem('guizang-ppt-note-size',String(noteSize));}
+  function currentElapsed(){return elapsed+(timerRunning?Date.now()-timerStartedAt:0);}
+  function currentSlideElapsed(i=idx){return slideElapsed[i]+(timerRunning&&timedSlideIndex===i?Date.now()-slideTimerStartedAt:0);}
+  function commitRunningTime(now=Date.now()){
+    if(!timerRunning)return;elapsed+=now-timerStartedAt;slideElapsed[timedSlideIndex]+=now-slideTimerStartedAt;timerStartedAt=now;slideTimerStartedAt=now;
+  }
+  function rollSlideTimer(nextIndex){if(timerRunning)commitRunningTime();timedSlideIndex=nextIndex;slideTimerStartedAt=Date.now();}
+  function renderTimer(){
+    const totalUsed=currentElapsed(),pageUsed=currentSlideElapsed(),target=plannedMsAt(idx),clock=document.getElementById('ppt-clock');
+    if(clock)clock.textContent=durationText(totalUsed);
+    const slideClock=document.getElementById('ppt-slide-clock'),slidePlan=document.getElementById('ppt-slide-plan'),statusBox=document.getElementById('ppt-slide-status-box'),statusLabel=document.getElementById('ppt-slide-status-label'),statusValue=document.getElementById('ppt-slide-status'),statusHint=document.getElementById('ppt-slide-status-hint');
+    if(slideClock)slideClock.textContent=durationText(pageUsed);if(slidePlan)slidePlan.textContent=target?`计划 ${durationText(target)}`:'计划 —';
+    if(statusBox&&statusLabel&&statusValue&&statusHint){
+      const over=Boolean(target&&pageUsed>target),remaining=Boolean(target&&!over);statusBox.classList.toggle('is-over',over);statusBox.classList.toggle('is-remaining',remaining);
+      statusLabel.textContent=over?'超时':(remaining?'剩余':'计划');statusValue.textContent=target?durationText(Math.abs(target-pageUsed)):'—';statusHint.textContent=over?'已超出本页计划':(remaining?'距本页计划':'未设置');
+    }
+    const totalPlan=totalPlannedMs(),plan=document.getElementById('ppt-plan');
+    if(plan)plan.textContent=totalPlan?`计划 ${Number(totalPlan/60000).toFixed(1)} 分钟 · 预计 ${clockTime(Date.now()+Math.max(0,totalPlan-totalUsed))}`:'计划 —';
+    const section=sectionInfo(idx),sectionEl=document.getElementById('ppt-section');
+    if(sectionEl){sectionEl.hidden=!section;sectionEl.textContent=section?`${section.name} · ${section.position}/${section.count}${section.planned?` · 剩余 ${durationText(Math.max(0,section.planned-section.used))}`:''}`:'';}
+    const timerButton=document.getElementById('ppt-timer-toggle');if(timerButton)timerButton.textContent=timerRunning?'暂停':(totalUsed?'继续计时':'开始计时');
+    const rehearsalButton=document.getElementById('ppt-rehearsal');if(rehearsalButton){rehearsalButton.textContent=rehearsalActive?'结束排练':'排练';rehearsalButton.classList.toggle('ppt-rehearsal-on',rehearsalActive);}
+    renderAutoState();
+  }
+  function toggleTimer(){const now=Date.now();if(timerRunning){commitRunningTime(now);timerRunning=false;}else{timerStartedAt=now;slideTimerStartedAt=now;timedSlideIndex=idx;timerRunning=true;}renderTimer();}
+  function resetTimer(){
+    elapsed=0;slideElapsed=Array(total).fill(0);timedSlideIndex=idx;
+    if(timerRunning){timerStartedAt=Date.now();slideTimerStartedAt=timerStartedAt;}else{timerStartedAt=0;slideTimerStartedAt=0;}
+    renderTimer();
+  }
+  function rehearsalHistory(){try{return JSON.parse(localStorage.getItem(storageKey('rehearsals'))||'[]');}catch(e){return[];}}
+  function toggleRehearsal(){
+    if(rehearsalActive){finishRehearsal(true);return;}
+    rehearsalActive=true;if(timerRunning){commitRunningTime();timerRunning=false;}resetTimer();toggleTimer();renderTimer();
+  }
+  function finishRehearsal(showSummary){
+    if(!rehearsalActive)return;if(timerRunning){commitRunningTime();timerRunning=false;}
+    const result={endedAt:Date.now(),totalMs:elapsed,slides:slideElapsed.map((ms,i)=>({index:i,id:slideId(i),title:noteAt(i).title||slideId(i),ms,targetMs:plannedMsAt(i)}))};
+    const history=rehearsalHistory();history.unshift(result);try{localStorage.setItem(storageKey('rehearsals'),JSON.stringify(history.slice(0,5)));}catch(e){}
+    rehearsalActive=false;renderTimer();if(showSummary)openRehearsalSummary(result,history.slice(0,5));
+  }
+  function openRehearsalSummary(result,history){
+    const rows=result.slides.filter(item=>item.ms>0).map(item=>`<tr><td>${item.index+1}</td><td>${escapeHTML(item.title)}</td><td>${durationText(item.ms)}</td><td>${item.targetMs?signedDuration(item.ms-item.targetMs):'—'}</td></tr>`).join('');
+    const recent=history.map(item=>`<div class="ppt-dialog-row"><span>${new Date(item.endedAt).toLocaleString()}</span><strong>${durationText(item.totalMs)}</strong></div>`).join('');
+    openDialog('排练记录',`<div class="ppt-dialog-section"><div class="ppt-dialog-row"><span>本次总时长</span><strong>${durationText(result.totalMs)}</strong></div><table class="ppt-summary"><thead><tr><th>#</th><th>页面</th><th>实际</th><th>与计划相比</th></tr></thead><tbody>${rows||'<tr><td colspan="4">没有记录到页面时间</td></tr>'}</tbody></table></div><div class="ppt-dialog-section"><h3>最近排练</h3>${recent}</div>`);
+  }
+
+  function autoDurationMs(i=idx){const explicit=Number(noteAt(i).autoAdvanceSeconds);const seconds=Number.isFinite(explicit)&&explicit>0?explicit:autoGlobalSeconds;return seconds>0?seconds*1000:null;}
+  function armAutoAdvance(){autoDeadline=0;autoRemainingMs=autoDurationMs()||0;}
+  function autoBlockedReason(){
+    if(presenterOverviewOn||overviewOn)return'宫格选页中';if(annotationTool!=='none')return'标注中';if(screenMode!=='normal')return'观众屏已暂停';if(document.hidden)return'窗口不可见';
+    const dialog=document.getElementById('ppt-dialog');if(dialog&&!dialog.hidden)return'设置中';
+    if(audienceOpenedAt&&syncState()!=='synced')return'等待观众屏同步';return'';
+  }
+  function updateAutoAdvance(){
+    if(!autoEnabled)return;
+    const duration=autoDurationMs();if(!duration||idx===total-1)return;
+    const blocked=autoBlockedReason(),now=Date.now();
+    if(blocked){if(autoDeadline){autoRemainingMs=Math.max(0,autoDeadline-now);autoDeadline=0;}return;}
+    if(!autoDeadline)autoDeadline=now+(autoRemainingMs||duration);
+    autoRemainingMs=Math.max(0,autoDeadline-now);
+    if(now>=autoDeadline){autoDeadline=0;autoRemainingMs=0;go(idx+1,{force:true});}
+  }
+  function renderAutoState(){
+    const button=document.getElementById('ppt-auto-toggle');if(!button)return;
+    const duration=autoDurationMs(),blocked=autoEnabled?autoBlockedReason():'';
+    button.classList.toggle('is-on',autoEnabled&&!blocked);button.classList.toggle('is-paused',autoEnabled&&Boolean(blocked));
+    if(!autoEnabled)button.textContent='自动翻页 · 关闭';
+    else if(!duration)button.textContent='自动翻页 · 等待时长';
+    else if(idx===total-1)button.textContent='自动翻页 · 已结束';
+    else if(blocked)button.textContent=`自动翻页 · ${blocked}`;
+    else button.textContent=`自动翻页 · ${durationText(autoRemainingMs||duration)}`;
+  }
+  function toggleAutoAdvance(){
+    if(!autoEnabled&&!autoDurationMs()){openSettings();return;}
+    autoEnabled=!autoEnabled;localStorage.setItem(storageKey('auto-enabled'),autoEnabled?'1':'0');armAutoAdvance();renderAutoState();
+  }
+
+  function openDialog(title,html){
+    const dialog=document.getElementById('ppt-dialog');if(!dialog)return;
+    document.getElementById('ppt-dialog-title').textContent=title;document.getElementById('ppt-dialog-body').innerHTML=html;dialog.hidden=false;renderAutoState();
+  }
+  function closeDialog(){const dialog=document.getElementById('ppt-dialog');if(dialog)dialog.hidden=true;renderAutoState();}
+  function applyLayout(value,persist=true){
+    layoutMode=['balanced','slides','notes'].includes(value)?value:'balanced';
+    document.getElementById('ppt-presenter')?.setAttribute('data-layout',layoutMode);
+    if(persist)localStorage.setItem(storageKey('layout'),layoutMode);requestAnimationFrame(fitPresenterFrames);
+  }
+  function applyAudienceScreen(value){
+    const cover=document.getElementById('ppt-audience-cover');if(!cover)return;
+    cover.classList.remove('is-ended');cover.textContent='';
+    if(value==='black'||value==='white'){cover.style.display='block';cover.style.background=value;}else cover.style.display='none';
+  }
+  function showAudienceEnded(){
+    const cover=document.getElementById('ppt-audience-cover');if(cover){cover.style.display='';cover.style.background='';cover.textContent='演示已结束';cover.classList.add('is-ended');}
+    setTimeout(()=>{try{window.close();}catch(e){}},120);
+  }
+  function setScreenMode(value){
+    const next=['normal','black','white','frozen'].includes(value)?value:'normal',wasFrozen=audienceFrozen;
+    screenMode=next;audienceFrozen=next==='frozen';emit({type:'screen',mode:next});
+    if(wasFrozen&&!audienceFrozen)sendGoto(true);updateSyncStatus();armAutoAdvance();renderAutoState();
+  }
+  function openSettings(){
+    openDialog('演示设置',`<div class="ppt-settings-card"><label class="ppt-switch-row" for="ppt-auto-enabled-setting"><span><strong>自动翻页</strong><br><span class="ppt-muted">需要时手动开启，默认关闭</span></span><input id="ppt-auto-enabled-setting" type="checkbox" ${autoEnabled?'checked':''}><span class="ppt-switch" aria-hidden="true"></span></label><div class="ppt-field"><label for="ppt-auto-seconds-setting">全局间隔</label><div class="ppt-stepper"><button id="ppt-auto-minus" type="button" aria-label="减少一秒">−</button><input id="ppt-auto-seconds-setting" type="number" min="1" step="1" value="${autoGlobalSeconds||''}" placeholder="—"><span class="ppt-stepper-unit">秒</span><button id="ppt-auto-plus" type="button" aria-label="增加一秒">+</button></div></div><button id="ppt-settings-save" class="ppt-ui-btn ppt-settings-save" type="button">保存自动翻页</button><p class="ppt-settings-copy">单页 autoAdvanceSeconds 优先于全局间隔；minutes 只是讲述计划。</p></div><div class="ppt-settings-card"><h3>演讲者布局</h3><p class="ppt-settings-copy">根据屏幕宽度调整页面与备注的比例</p><div class="ppt-segmented"><button class="ppt-ui-btn" data-layout-choice="balanced" type="button">均衡</button><button class="ppt-ui-btn" data-layout-choice="slides" type="button">页面优先</button><button class="ppt-ui-btn" data-layout-choice="notes" type="button">备注优先</button></div></div><div class="ppt-settings-card"><h3>观众屏</h3><p class="ppt-settings-copy">临时遮挡或冻结观众屏</p><div class="ppt-segmented screen"><button class="ppt-ui-btn" data-screen-choice="normal" type="button">正常</button><button class="ppt-ui-btn" data-screen-choice="black" type="button">黑屏 B</button><button class="ppt-ui-btn" data-screen-choice="white" type="button">白屏 W</button><button class="ppt-ui-btn" data-screen-choice="frozen" type="button">冻结 F</button></div></div><div class="ppt-dialog-section"><button id="ppt-open-shortcuts" class="ppt-ui-btn" type="button">查看快捷键</button></div>`);
+    document.querySelectorAll('[data-layout-choice]').forEach(button=>{button.classList.toggle('ppt-primary',button.dataset.layoutChoice===layoutMode);button.onclick=()=>{applyLayout(button.dataset.layoutChoice);openSettings();};});
+    document.querySelectorAll('[data-screen-choice]').forEach(button=>{button.classList.toggle('ppt-primary',button.dataset.screenChoice===screenMode);button.onclick=()=>{setScreenMode(button.dataset.screenChoice);openSettings();};});
+    const secondsInput=document.getElementById('ppt-auto-seconds-setting'),stepSeconds=delta=>{const current=Math.max(0,Number(secondsInput.value||0));secondsInput.value=String(Math.max(1,current+delta));};
+    document.getElementById('ppt-auto-minus').onclick=()=>stepSeconds(-1);document.getElementById('ppt-auto-plus').onclick=()=>stepSeconds(1);
+    document.getElementById('ppt-settings-save').onclick=()=>{autoEnabled=document.getElementById('ppt-auto-enabled-setting').checked;autoGlobalSeconds=Math.max(0,Number(secondsInput.value||0));localStorage.setItem(storageKey('auto-enabled'),autoEnabled?'1':'0');localStorage.setItem(storageKey('auto-seconds'),String(autoGlobalSeconds));armAutoAdvance();closeDialog();};
+    document.getElementById('ppt-open-shortcuts').onclick=openShortcuts;
+  }
+  function openShortcuts(){
+    const items=[['← / →','上一页 / 下一页'],['Home / End','首页 / 尾页'],['Esc','宫格选页；标注工具激活时先退出工具'],['L','激光笔'],['C','圈选'],['X','清除标记'],['B / W','观众屏黑屏 / 白屏'],['F','冻结 / 恢复观众屏'],['A','开启 / 关闭自动翻页'],['R','开始 / 结束排练'],['?','快捷键说明']];
+    openDialog('快捷键',`<div class="ppt-shortcuts">${items.map(([key,label])=>`<kbd>${key}</kbd><span>${label}</span>`).join('')}</div>`);
+  }
+  function preflightChecks(){
+    const images=[...document.images],videos=[...document.querySelectorAll('video')],frame=document.getElementById('ppt-current-frame'),rect=frame?.getBoundingClientRect();
+    return[
+      {label:'观众屏连接',ok:['synced','frozen'].includes(syncState()),detail:`当前状态：${document.getElementById('ppt-sync')?.textContent||'未连接'}`},
+      {label:'弹窗权限',ok:!popupBlocked,detail:popupBlocked?'浏览器阻止了观众窗口':'未检测到弹窗拦截'},
+      {label:'全屏状态',ok:Boolean(document.fullscreenElement),warn:true,detail:document.fullscreenElement?'已进入全屏':'尚未全屏，可在演讲前进入'},
+      {label:'字体加载',ok:!document.fonts||document.fonts.status==='loaded',detail:document.fonts?`状态：${document.fonts.status}`:'浏览器不提供字体状态'},
+      {label:'图片资源',ok:images.every(image=>image.complete&&image.naturalWidth>0),detail:`${images.filter(image=>image.complete&&image.naturalWidth>0).length} / ${images.length} 已加载`},
+      {label:'视频资源',ok:videos.every(video=>video.readyState>=2),detail:videos.length?`${videos.filter(video=>video.readyState>=2).length} / ${videos.length} 可播放`:'没有视频'},
+      {label:'当前页 16:9',ok:Boolean(rect&&Math.abs(rect.width/rect.height-16/9)<.003),detail:rect?`${Math.round(rect.width)} × ${Math.round(rect.height)}`:'尚未渲染'}
+    ];
+  }
+  function openPreflight(){
+    const checks=preflightChecks(),html=checks.map(item=>`<div class="ppt-dialog-row"><div class="ppt-check ${item.ok?'is-ok':(item.warn?'is-warn':'')}"><span class="ppt-check-dot"></span><span><strong>${item.label}</strong><br><span class="ppt-muted">${item.detail}</span></span></div><strong>${item.ok?'正常':(item.warn?'建议':'异常')}</strong></div>`).join('');
+    openDialog('演前检查',`<div class="ppt-dialog-section">${html}</div><div class="ppt-dialog-section"><button id="ppt-preflight-refresh" class="ppt-ui-btn" type="button">重新检查</button> <button id="ppt-enter-fullscreen" class="ppt-ui-btn" type="button">进入全屏</button></div><p class="ppt-muted">这里只能检查浏览器和观众页面的软件状态，不能确认 HDMI、转接器或投影仪线缆是否物理连接。</p>`);
+    document.getElementById('ppt-preflight-refresh').onclick=openPreflight;
+    document.getElementById('ppt-enter-fullscreen').onclick=async()=>{try{await document.documentElement.requestFullscreen();}catch(e){}openPreflight();};
+  }
+
+  function initTransport(){
+    if(transportReady)return;transportReady=true;
+    if('BroadcastChannel'in window){try{channel=new BroadcastChannel(channelName());channel.onmessage=e=>receive(e.data);}catch(e){}}
+    addEventListener('message',e=>receive(e.data));
+    addEventListener('storage',e=>{if(e.key===syncKey()&&e.newValue){try{receive(JSON.parse(e.newValue));}catch(err){}}});
+  }
+  function emit(payload,{persist=true}={}){
+    const message={__guizangPptSync:1,session,role:mode,...payload,at:Date.now(),nonce:Math.random().toString(36).slice(2)};
+    try{channel?.postMessage(message);}catch(e){}
+    if(persist)try{localStorage.setItem(syncKey(),JSON.stringify(message));}catch(e){}
+    try{if(mode==='presenter'&&audienceWindow&&!audienceWindow.closed)audienceWindow.postMessage(message,'*');}catch(e){}
+    try{if(mode==='audience'&&window.opener&&!window.opener.closed)window.opener.postMessage(message,'*');}catch(e){}
+  }
+  function receive(message){
+    if(!message||message.__guizangPptSync!==1||message.session!==session||message.role===mode)return;
+    if(message.nonce){if(seenNonceSet.has(message.nonce))return;seenNonceSet.add(message.nonce);seenNonces.push(message.nonce);if(seenNonces.length>256)seenNonceSet.delete(seenNonces.shift());}
+    if(mode==='presenter'){
+      if(message.type==='ready'){popupBlocked=false;sendGoto(true);}
+      if(message.type==='ack'){lastAckAt=Date.now();lastAckIndex=Number(message.index);lastAckSeq=Number(message.seq);updateSyncStatus();}
+      return;
+    }
+    if(mode!=='audience')return;
+    if(message.type==='bye'){showAudienceEnded();return;}
+    if(message.type==='screen'){applyAudienceScreen(message.mode);return;}
+    if(message.type==='laser'&&Number(message.index)===idx){audienceLaser=message.point||null;audienceLaserHideAt=Date.now()+650;renderInks();return;}
+    if(message.type==='circle'&&Number(message.index)===idx&&message.circle){audienceCircles.push(message.circle);renderInks();return;}
+    if(message.type==='clear'&&Number(message.index)===idx){audienceCircles=[];renderInks();return;}
+    if(message.type==='goto'||message.type==='ping'){
+      if(message.type==='goto'){audienceCircles=Array.isArray(message.circles)?message.circles:[];applyAudienceScreen(message.screenMode);go(Number(message.index),{force:true});}
+      emit({type:'ack',index:idx,seq:Number(message.seq)});
+    }
+  }
+  function receivePreview(message){
+    if(!message||message.__guizangPptSync!==1||message.session!==session||message.role!=='presenter'||message.type!=='preview-goto')return;
+    go(Number(message.index),{force:true});
+  }
+  function sendGoto(force=false){
+    if(mode!=='presenter'||audienceFrozen)return;if(force||lastAckIndex!==idx)seq++;
+    emit({type:'goto',index:idx,seq,screenMode,circles});updateSyncStatus();
+  }
+  function syncState(){
+    if(popupBlocked)return'blocked';if(audienceWindow&&audienceWindow.closed)return'disconnected';if(audienceFrozen)return'frozen';
+    if(!lastAckAt)return audienceOpenedAt&&Date.now()-audienceOpenedAt<2600?'connecting':'disconnected';
+    if(Date.now()-lastAckAt>2600)return'disconnected';if(lastAckIndex!==idx||lastAckSeq<seq)return'unsynced';return'synced';
+  }
+  function updateSyncStatus(){
+    const el=document.getElementById('ppt-sync');if(!el)return;const state=syncState();
+    const labels={blocked:'弹窗被拦截',disconnected:'未连接',connecting:'连接中',unsynced:'未同步',frozen:'已冻结',synced:`已同步 · 第 ${idx+1} 页`};
+    el.dataset.state=state;el.textContent=`观众屏 · ${labels[state]}`;
+  }
+  function reopenAudience(){
+    initTransport();popupBlocked=false;audienceOpenedAt=Date.now();lastAckAt=0;lastAckIndex=-1;lastAckSeq=-1;
+    if(audienceFrozen){audienceFrozen=false;screenMode='normal';}
+    audienceWindow=window.open(frameUrl('audience',idx),`guizang-ppt-audience-${session}`,'popup=yes,width=1440,height=900');
+    if(!audienceWindow)popupBlocked=true;updateSyncStatus();
+  }
+  function enterPresenter(openAudience=true){
+    if(mode==='presenter')return;if(overviewOn)toggleOverview();lowPowerBeforePresenter=window.__lowPowerMode;mode='presenter';initTransport();mountShell();
+    document.body.classList.remove('ppt-audience','ppt-preview');document.body.classList.add('ppt-presenter');document.title=`演讲者视图 · ${originalTitle}`;
+    window.__setLowPowerMode?.(true,{persist:false});updateShell();armAutoAdvance();if(openAudience)reopenAudience();
+  }
+  function exitPresenter(){
+    if(rehearsalActive)finishRehearsal(false);else if(timerRunning){commitRunningTime();timerRunning=false;}togglePresenterOverview(false);emit({type:'bye'});audienceWindow=null;audienceOpenedAt=0;lastAckAt=0;lastAckIndex=-1;lastAckSeq=-1;mode='deck';document.body.classList.remove('ppt-presenter');document.title=originalTitle;window.__setLowPowerMode?.(lowPowerBeforePresenter,{persist:false});
+  }
+  function initAudience(){
+    mode='audience';document.body.classList.add('ppt-audience');document.title=`观众屏 · ${originalTitle}`;
+    document.body.insertAdjacentHTML('beforeend','<canvas id="ppt-audience-ink" aria-hidden="true"></canvas><div id="ppt-audience-cover" aria-hidden="true"></div>');
+    const resize=()=>{sizeInk(document.getElementById('ppt-audience-ink'),innerWidth,innerHeight);renderInks();};addEventListener('resize',resize);resize();
+    initTransport();emit({type:'ready',index:idx});
+  }
+  function initPreview(){mode='preview';document.body.classList.add('ppt-preview');window.__setLowPowerMode?.(true,{persist:false});addEventListener('message',e=>{if(e.source===parent)receivePreview(e.data);});}
+  function onSlideChange(nextIndex){
+    if(mode!=='presenter')return;rollSlideTimer(nextIndex);circles=[];draftCircle=null;laserPoint=null;annotationPointerDown=false;armAutoAdvance();updateShell();sendGoto();
+  }
+  function handleKey(e){
+    const editable=e.target?.matches?.('input,textarea,[contenteditable="true"]');
+    if(editable){if(e.key==='Escape')e.target.blur();return true;}
+    if(mode==='audience'||mode==='preview'){e.preventDefault();return true;}
+    if(mode==='deck'&&e.key?.toLowerCase()==='p'&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();enterPresenter(true);return true;}
+    if(mode!=='presenter')return false;
+    const key=e.key?.toLowerCase();
+    const dialog=document.getElementById('ppt-dialog');
+    if(!dialog?.hidden){if(e.key==='Escape'){e.preventDefault();closeDialog();}return true;}
+    if(e.key==='?'||key==='/'){e.preventDefault();openShortcuts();return true;}
+    if(e.key==='Escape'){e.preventDefault();if(annotationTool!=='none')setAnnotationTool('none');else togglePresenterOverview();return true;}
+    if(presenterOverviewOn)return true;
+    if(key==='l'){e.preventDefault();setAnnotationTool('laser');return true;}
+    if(key==='c'){e.preventDefault();setAnnotationTool('circle');return true;}
+    if(key==='x'){e.preventDefault();clearAnnotations(true);return true;}
+    if(key==='b'){e.preventDefault();setScreenMode(screenMode==='black'?'normal':'black');return true;}
+    if(key==='w'){e.preventDefault();setScreenMode(screenMode==='white'?'normal':'white');return true;}
+    if(key==='f'){e.preventDefault();setScreenMode(audienceFrozen?'normal':'frozen');return true;}
+    if(key==='a'){e.preventDefault();toggleAutoAdvance();return true;}
+    if(key==='r'){e.preventDefault();toggleRehearsal();return true;}
+    if(['ArrowRight','PageDown',' ','ArrowDown'].includes(e.key)){e.preventDefault();go(idx+1,{force:true});return true;}
+    if(['ArrowLeft','PageUp','ArrowUp'].includes(e.key)){e.preventDefault();go(idx-1,{force:true});return true;}
+    if(e.key==='Home'){e.preventDefault();go(0,{force:true});return true;}
+    if(e.key==='End'){e.preventDefault();go(total-1,{force:true});return true;}
+    return false;
+  }
+  function initMode(){
+    document.getElementById('ppt-low-power-btn')?.addEventListener('click',()=>window.__setLowPowerMode(!window.__lowPowerMode));
+    document.getElementById('ppt-overview-btn')?.addEventListener('click',toggleOverview);
+    document.getElementById('ppt-presenter-btn')?.addEventListener('click',()=>enterPresenter(true));
+    if(requestedMode==='audience')initAudience();else if(requestedMode==='preview')initPreview();else if(requestedMode==='presenter')enterPresenter(false);
+  }
+  setInterval(()=>{
+    renderTimer();renderInks();updateAutoAdvance();
+    if(mode==='presenter'&&Date.now()-lastPingAt>900){lastPingAt=Date.now();if(audienceWindow?.closed)updateSyncStatus();emit({type:'ping',index:idx,seq});updateSyncStatus();}
+  },250);
+  return{initMode,onSlideChange,handleKey,slideLabel,enterPresenter,reopenAudience,toggleOverview:togglePresenterOverview,debugState:()=>({mode,idx,session,syncState:syncState(),timerRunning,rehearsalActive,presenterOverviewOn,autoEnabled,autoGlobalSeconds,autoRemainingMs,screenMode,annotationTool,circles:[...circles],audienceCircles:[...audienceCircles],layoutMode})};
+})();
+/* =============== /演讲者模式 / 观众屏同步 =============== */
+
+addEventListener('keydown',e=>{
+  if(window.__pptPresenter?.handleKey(e))return;
+  if(e.key==='Escape'){e.preventDefault();toggleOverview();return;}
+  if(e.key && e.key.toLowerCase()==='b' && !e.metaKey && !e.ctrlKey && !e.altKey){
+    e.preventDefault();
+    window.__setLowPowerMode(!window.__lowPowerMode);
+    return;
+  }
+  if(overviewOn)return;
+  if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '||e.key==='ArrowDown'){
+    if(window.__pipeAdvance && window.__pipeAdvance()) return;
+    go(idx+1);
+    return;
+  }
+  if(e.key==='ArrowLeft'||e.key==='PageUp'||e.key==='ArrowUp')go(idx-1);
+  if(e.key==='Home')go(0);
+  if(e.key==='End')go(total-1);
+});
+
+let wheelTO=null,wheelAcc=0;
+addEventListener('wheel',e=>{
+  wheelAcc+=e.deltaY+e.deltaX;
+  if(Math.abs(wheelAcc)>50){
+    if(wheelAcc>0 && window.__pipeAdvance && window.__pipeAdvance()){
+      wheelAcc=0;
+    }else{
+      go(idx+(wheelAcc>0?1:-1));wheelAcc=0;
+    }
+  }
+  clearTimeout(wheelTO);wheelTO=setTimeout(()=>wheelAcc=0,150);
+},{passive:true});
+
+let tx=0,ty=0;
+addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
+addEventListener('touchend',e=>{
+  const dx=(e.changedTouches[0].clientX-tx);
+  const dy=(e.changedTouches[0].clientY-ty);
+  if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)){
+    if(dx<0 && window.__pipeAdvance && window.__pipeAdvance()) return;
+    go(idx+(dx<0?1:-1));
+  }
+},{passive:true});
+
+/* ?slide=N 直达（1-based），与 Swiss 模板行为一致 */
+const initialSlideParam = new URLSearchParams(location.search).get('slide');
+const initialSlide = initialSlideParam ? Number(initialSlideParam) - 1 : 0;
+go(Number.isFinite(initialSlide) ? initialSlide : 0);
+window.__pptPresenter?.initMode();
+</script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script>lucide.createIcons();</script>
+
+<!-- ============ Motion One 动效引擎（本地优先,CDN 兜底） ============
+     加载策略:先 ./assets/motion.min.js(本地,离线可用),失败 fallback 到 jsDelivr CDN
+     加载完成后挂 window.__playSlide / window.__pipeAdvance,
+     导航脚本会在翻页中段调用 __playSlide(idx),键盘/滚轮/触屏会在翻页前调用 __pipeAdvance()
+     双双失败时会兜底把所有 [data-anim] 设为可见,不让动效破坏阅读
+-->
+<script type="module">
+let motion;
+try {
+  motion = await import('./assets/motion.min.js');
+} catch(e1) {
+  try {
+    motion = await import('https://cdn.jsdelivr.net/npm/motion@11.11.17/+esm');
+  } catch(e2) {
+    console.warn('[motion] local + CDN both failed, disabling animations', e1, e2);
+    document.querySelectorAll('[data-anim]').forEach(el=>{el.style.opacity='1';el.style.transform='none'});
+    document.querySelectorAll('[data-animate="pipeline"] [data-anim]').forEach(el=>el.style.opacity='1');
+  }
+}
+
+if(motion){
+  const { animate, stagger } = motion;
+  document.body.classList.add('motion-ready');
+  const EASE = [.22, 1, .36, 1];
+  const slides = [...document.querySelectorAll('.slide')];
+  let pipeStep = -1;
+  let lastIdx = -1;
+
+  function resetAnims(slide){
+    slide.querySelectorAll('[data-anim]').forEach(el=>{
+      el.style.opacity='';
+      el.style.transform='';
+    });
+  }
+
+  function revealStatic(slide){
+    resetAnims(slide);
+    document.getAnimations?.().forEach(a=>a.cancel());
+    slide.querySelectorAll('[data-anim]').forEach(el=>{
+      el.style.opacity='1';
+      el.style.transform='none';
+    });
+  }
+
+  function playSlide(i){
+    const slide = slides[i];
+    if(!slide) return;
+    lastIdx = i;
+    const recipe = slide.dataset.animate || (slide.classList.contains('hero') ? 'hero' : 'cascade');
+
+    if(window.__lowPowerMode){
+      revealStatic(slide);
+      return;
+    }
+
+    if(recipe === 'pipeline'){
+      pipeStep = -1;
+      slide.querySelectorAll('[data-anim]').forEach(el=>{
+        el.style.opacity='0.15';
+        el.style.transform='none';
+      });
+      return;
+    }
+
+    resetAnims(slide);
+    const all = [...slide.querySelectorAll('[data-anim]')];
+    if(!all.length) return;
+
+    if(recipe === 'directional'){
+      const lefts  = all.filter(el=>el.dataset.anim==='left');
+      const divs   = all.filter(el=>el.dataset.anim==='divider');
+      const rights = all.filter(el=>el.dataset.anim==='right');
+      const others = all.filter(el=>!['left','right','divider'].includes(el.dataset.anim));
+      if(others.length) animate(others, {opacity:[0,1], y:[12,0]}, {duration:.6, delay:stagger(.1, {start:.15}), easing:EASE});
+      if(lefts.length)  animate(lefts,  {opacity:[0,1], x:[-24,0]}, {duration:.8, delay:.35, easing:EASE});
+      if(divs.length)   animate(divs,   {opacity:[0,.25]},          {duration:.5, delay:.9});
+      if(rights.length) animate(rights, {opacity:[0,1], x:[24,0]},  {duration:.8, delay:1.0, easing:EASE});
+      return;
+    }
+
+    if(recipe === 'quote'){
+      const lines = all.filter(el=>el.dataset.anim==='line');
+      const others = all.filter(el=>el.dataset.anim!=='line');
+      if(others.length) animate(others, {opacity:[0,1], y:[8,0]},    {duration:.6, delay:stagger(.12, {start:.2}), easing:EASE});
+      if(lines.length)  animate(lines,  {opacity:[.35,1], y:[10,0]}, {duration:.8, delay:stagger(.55, {start:.5}), easing:EASE});
+      return;
+    }
+
+    if(recipe === 'hero'){
+      animate(all, {opacity:[0,1], y:[14,0]}, {duration:.9, delay:stagger(.16, {start:.2}), easing:EASE});
+      return;
+    }
+
+    // default: cascade
+    animate(all, {opacity:[0,1], y:[16,0]}, {duration:.75, delay:stagger(.1, {start:.15}), easing:EASE});
+  }
+
+  function pipeAdvance(){
+    if(window.__lowPowerMode) return false;
+    const slide = slides[lastIdx];
+    if(!slide || slide.dataset.animate !== 'pipeline') return false;
+    const steps  = [...slide.querySelectorAll('[data-anim="step"]')];
+    const arrows = [...slide.querySelectorAll('[data-anim="arrow"]')];
+    if(pipeStep >= steps.length - 1) return false;
+    pipeStep++;
+    animate(steps[pipeStep], {opacity:[0.15,1], y:[8,0]}, {duration:.5, easing:EASE});
+    if(pipeStep > 0 && arrows[pipeStep-1]){
+      animate(arrows[pipeStep-1], {opacity:[0.15,.7]}, {duration:.3, delay:.15});
+    }
+    return true;
+  }
+
+  window.__playSlide = playSlide;
+  window.__pipeAdvance = pipeAdvance;
+
+  // 首屏:go() 已跑过(同步),没来得及触发动效 → 这里补一下(尊重 ?slide=N)
+  playSlide(window.__currentSlideIndex || 0);
+}
+</script>
+</body>
+</html>
