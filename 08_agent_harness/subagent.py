@@ -41,6 +41,7 @@ def spawn_subagent(task: str) -> str:  # 定义函数
     适用场景：需要在多个文件里找东西、确认某段代码是否存在、统计某类信息——
     这些操作会产生大量中间工具结果，子 Agent 帮你消化掉，主 Agent 只看结论。
     """
+    print("子 Agent开始处理...")
     llm = get_llm(temperature=0.0).bind_tools(SUBAGENT_TOOLS)  # 绑定只读工具的 LLM
     tool_map = {t.name: t for t in SUBAGENT_TOOLS}  # 工具名 → 可调用对象
 
@@ -50,6 +51,7 @@ def spawn_subagent(task: str) -> str:  # 定义函数
         ai = llm.invoke(messages)  # 子 LLM 推理一步
         messages.append(ai)  # 追加 AI 消息到子上下文
         if not getattr(ai, "tool_calls", None):  # 无 tool_calls 表示给出最终答案
+            print("子 Agent处理结果: "+ai.content)
             return ai.content or "(子 Agent 没有返回内容)"  # 返回结论文本
         for call in ai.tool_calls:  # 执行每个 tool_call
             t = tool_map.get(call["name"])  # 查工具

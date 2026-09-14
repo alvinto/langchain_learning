@@ -8,33 +8,80 @@ from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage  # 
 from _common import get_llm, banner  # 导入项目共享 LLM/Embedding 配置
 """
 05-2 bind_tools 手工 Tool Calling
-学到：理解 Tool Calling 的底层原理 —— LLM 返回 tool_calls，你执行后把结果以 ToolMessage 回传，再让 LLM 总结。
+学到：理解 Tool Calling 的底层原理 —— Tool execution loop 工具执行循环 
+LLM 返回 tool_calls，你执行后把结果以 ToolMessage 回传，再让 LLM 总结。
 （生产中用 LangGraph 的 create_react_agent 自动处理，但先看一遍手动流程很有帮助）
+
+tool 定义格式
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_weather",
+            "description": "查询指定城市的当前天气",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "城市名称，如北京、上海"
+                    }
+                },
+                "required": ["location"]
+            }
+        }
+    }
+]
+
+大模型返回函数调用指令
+{
+  "tool_calls": [
+    {
+      "id": "call_001",
+      "type": "function",
+      "function": {
+        "name": "get_current_weather",
+        "arguments": "{\"location\": \"上海\"}"
+      }
+    },
+    {
+      "id": "call_002",
+      "type": "function",
+      "function": {
+        "name": "get_current_weather",
+        "arguments": "{\"location\": \"北京\"}"
+      }
+    }
+  ]
+}
 """
 
-@tool  # 声明 LangChain 工具
-def add(a: int, b: int) -> int:  # 定义函数
-    """两数相加。"""
-    return a + b  # 返回结果
+@tool
+def get_city_weather(city:str) -> str:
+    """获取城市当前摄氏温度，返回数字。拿到温度结果后，可以传给c2f工具做单位转换"""
+    mock_data = {"上海":26, "北京":22, "深圳":30}
+    return str(mock_data.get(city, 20))
+
+@tool
+def c2f(celcius:float) -> float:
+    """摄氏度转华氏度，公式 F = C * 1.8 + 32，使用前面工具返回的温度值作为参数"""
+    return celcius * 1.8 +32
 
 
-@tool  # 声明 LangChain 工具
-def multiply(a: int, b: int) -> int:  # 定义函数
-    """两数相乘。"""
-    return a * b  # 返回结果
-
-
-TOOLS = {"add": add, "multiply": multiply}  # 赋值给 TOOLS
+TOOLS = {
+    "get_city_weather": get_city_weather,
+    "c2f": c2f
+}
 
 
 def main() -> None:  # demo 入口函数
     banner("05-2 bind_tools (manual loop)")  # 打印章节标题分隔条
-    llm_with_tools = get_llm(temperature=0).bind_tools(list(TOOLS.values()))  # 获取 ChatOpenAI 兼容 LLM
+    llm_with_tools = get_llm().bind_tools(list(TOOLS.values()))
 
     # 增加系统提示，强制多步工具推理
     messages = [  # 赋值给 messages
-        SystemMessage("你必须分步完成数学计算，拿到工具返回结果后，检查是否还有计算步骤未完成；只要还有运算就要继续调用工具，全部计算结束后再输出答案，不能中途停止。"),  # 构造系统消息
-        HumanMessage("先算 3 + 4，再把结果乘以 5，两步都要执行")  # 构造用户消息
+        SystemMessage("分步执行工具，拿到工具返回值作为下一轮工具参数，不要重复调用相同工具。"),  # 构造系统消息
+        HumanMessage("上海现在多少摄氏度，转成华氏度告诉我")  # 构造用户消息
     ]  # 闭合括号/元组/字典
     ai = llm_with_tools.invoke(messages)  # 同步调用链/图
 
@@ -46,6 +93,7 @@ def main() -> None:  # demo 入口函数
         if not ai.tool_calls:  # 代码块起始
             break  # 跳出循环
         # 执行所有工具，tool的执行是在框架中，并不是大模型执行的
+        # 这里是手动调用对应的tool，在Agent中原理也是这样的
         for call in ai.tool_calls:  # for 循环
             res = TOOLS[call["name"]].invoke(call["args"])  # 同步调用链/图
             print(f"  执行 {call['name']}({call['args']}) = {res}")  # 打印输出

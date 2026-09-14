@@ -46,7 +46,10 @@ def main() -> None:  # demo 入口函数
         tools=[add, multiply, get_user_age],  # 执行本行逻辑
         **{_PROMPT_KEY: "你是一个会用工具的助手。需要计算或查询时，必须调用工具。"},  # 执行本行逻辑
     )  # 闭合括号/元组/字典
-
+    '''模型可以判断tools是否能够并行执行，比如张三和李四的年龄之和是多少？会并行调用两次get_user_age，接着再依次调用add，multiply
+    大部分模型默认情况都是允许并行调用多个工具的，有些支持禁用此功能，(including OpenAI and Anthropic) allow you to disable this feature. To do this, set parallel_tool_calls=False:
+    model.bind_tools([get_weather], parallel_tool_calls=False)
+    '''
     out = agent.invoke({"messages": [  # 同步调用链/图
         ("user", "张三和李四的年龄之和是多少？再乘以 2 是多少？")  # 链式/容器表达式续行
     ]})  # 执行本行逻辑

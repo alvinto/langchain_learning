@@ -4,6 +4,12 @@
 - StrOutputParser：拿到纯字符串而不是 AIMessage
 - JsonOutputParser：把 JSON 字符串解析成 dict
 - PydanticOutputParser：直接得到 Pydantic 对象，附带 schema 提示
+Method parameter:
+- json_schema ： 使用该服务提供商所提供的专用结构化输出功能。
+- function_calling ： 通过强制工具调用遵循既定的格式规范，从而生成结构化的输出结果。
+- json_mode ： 某些提供商提供的 'json_schema' 的预处理版本。该功能能够生成有效的 JSON 格式数据，但相关的架构信息必须在提示中明确指定。
+Include raw: include_raw=True 包含原始信息
+Validation：Pydantic 模型能够自动进行验证。而 TypedDict 和 JSON Schema 则需要进行手动验证。
 """
 from __future__ import annotations  # 启用 PEP 563 延迟注解
 import sys  # 导入 sys 标准库
@@ -11,6 +17,10 @@ from pathlib import Path  # 导入 Path 处理路径
 sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将项目根目录加入模块搜索路径
 
 from typing import List  # 导入 typing 类型注解
+"""
+Pydantic 是 Python 数据验证和类型管理的标准库，与 FastAPI 深度集成，是构建现代 Web API 的必备工具。
+用于定义数据模型、验证数据、处理类型注解。
+"""
 from pydantic import BaseModel, Field  # 导入 pydantic 数据校验
 
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser  # 导入输出解析器
@@ -20,6 +30,7 @@ from _common import get_llm, banner  # 导入项目共享 LLM/Embedding 配置
 
 
 class Recipe(BaseModel):  # 定义类
+    """定义Recipe类格式"""
     name: str = Field(description="菜名")  # 赋值给 str
     ingredients: List[str] = Field(description="原料列表")  # 赋值给 List[str]
     steps: List[str] = Field(description="步骤")  # 赋值给 List[str]
@@ -56,6 +67,10 @@ def demo_pydantic_parser() -> None:  # 定义函数
 
     chain = prompt | get_llm() | parser  # 获取 ChatOpenAI 兼容 LLM
     recipe: Recipe = chain.invoke({"dish": "番茄炒蛋"})  # 同步调用链/图
+
+    # response = get_llm().with_structured_output(Recipe, include_raw=True).invoke("给我一个番茄炒蛋的菜谱")
+    # print(response)
+    # recipe: Recipe = response['parsed']
     print(f"菜名: {recipe.name}")  # 打印输出
     print(f"原料: {recipe.ingredients}")  # 打印输出
     print("步骤:")  # 打印输出
@@ -64,8 +79,8 @@ def demo_pydantic_parser() -> None:  # 定义函数
 
 
 def main() -> None:  # demo 入口函数
-    demo_str_parser()  # 执行本行逻辑
-    demo_json_parser()  # 执行本行逻辑
+    # demo_str_parser()  # 执行本行逻辑
+    # demo_json_parser()  # 执行本行逻辑
     demo_pydantic_parser()  # 执行本行逻辑
 
 

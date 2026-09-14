@@ -8,11 +8,13 @@ import os  # 导入 os 标准库
 from pathlib import Path  # 导入 Path 处理路径
 
 from dotenv import load_dotenv  # 导入 dotenv 环境变量加载器
+from langchain_core.globals import set_debug
 
 # 自动加载项目根目录的 .env
 ROOT = Path(__file__).resolve().parent  # 赋值给 ROOT
 load_dotenv(ROOT / ".env")  # 加载 .env 环境变量
-
+# 开启debug模式，打印所有日志
+set_debug(True)
 # 让国内 API 域名绕过本地代理（Clash/V2Ray 等），避免 SSL 握手失败。
 # 如果你只用 OpenAI 官方接口可以删掉这段。
 _BYPASS_HOSTS = (  # 赋值给 _BYPASS_HOSTS

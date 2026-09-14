@@ -18,7 +18,7 @@ env/
 
 # Secrets
 .env
-.env.local
+.env.bak
 
 # 运行时产物
 **/_faiss_index/

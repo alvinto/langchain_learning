@@ -57,9 +57,9 @@ SYSTEM_PROMPT = """\
 你是一个运行在沙箱里的代码助手。沙箱根目录是 ./workspace/。
 
 你可以使用以下工具：
-- read_file / write_file / list_dir / grep / run_bash：在 workspace 内操作文件和命令
+- write_file / run_bash：在 workspace 内操作文件和命令
 - todo_write：把你的计划记到待办清单（用户能看到，你也能用来跟踪进度）
-- spawn_subagent：当需要在多文件里调查某个问题时，派一个只读子 agent 去做，它只回传结论
+- spawn_subagent：当需要读取文件内容时（read_file / list_dir / grep / find），必须派一个只读子 agent 去做，它只回传结论
 
 工作守则：
 1. 收到非平凡任务时先用 todo_write 写一份计划，再开始动手
@@ -133,10 +133,11 @@ def build_harness(  # 定义函数
                 if not approved:  # 用户拒绝
                     msg = f"[denied] 用户拒绝执行 {name}"  # 赋值给 msg
                     tool_messages.append(ToolMessage(content=msg, tool_call_id=tcid))  # 构造工具返回消息
+                    # 派发事件，会回调事件上注册的所有函数
                     hooks.fire("post_tool", {**ctx, "result": msg, "blocked": True})  # 执行本行逻辑
                     continue  # 跳过本次循环
 
-            # 2) pre_tool hook（可阻断、可改写参数）
+            # 2) pre_tool hook（可阻断、可改写参数）危险操作需要审批
             pre = hooks.fire("pre_tool", ctx)  # 派发 pre_tool
             if pre.get("block"):  # hook 阻断
                 msg = f"[blocked by hook] {pre.get('reason', '')}"  # 赋值给 msg

@@ -1,6 +1,14 @@
 """
 01-2 消息类型
-学到：SystemMessage / HumanMessage / AIMessage 三种角色，多轮对话靠传消息列表实现。
+学到：SystemMessage / HumanMessage / AIMessage（tool calls,usage_metadata,） 三种角色，多轮对话靠传消息列表实现。
+LangChain 提供了一种通用的消息类型，该类型适用于所有的模型提供者。这样一来，无论调用的是哪个模型，都能确保一致的行为表现。
+
+tool_message = ToolMessage(
+    content=message_content,
+    tool_call_id="call_123",
+    name="search_books",
+    artifact=artifact,
+)
 """
 from __future__ import annotations  # 启用 PEP 563 延迟注解
 import sys  # 导入 sys 标准库
@@ -30,6 +38,14 @@ def main() -> None:  # demo 入口函数
     ])  # 执行本行逻辑
     reply2 = llm.invoke(messages)  # 同步调用链/图
     print("助手:", reply2.content)  # 打印输出
+
+    # 第三轮：使用字典格式传递消息
+    messages.extend([  # 执行本行逻辑
+        AIMessage(reply2.content),  # 构造助手消息
+        {"role":"user","content":"那秋天呢"}
+    ])  # 执行本行逻辑
+    reply3 = llm.invoke(messages)  # 同步调用链/图
+    print("助手:", reply3.content)  # 打印输出
 
 
 if __name__ == "__main__":  # 脚本直接运行时执行 main

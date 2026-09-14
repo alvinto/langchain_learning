@@ -1,6 +1,7 @@
 """
 01-1 第一次调用 LLM
 学到：怎么用 _common.get_llm() 拿模型，调用 .invoke() 单轮问答。
+所有支持的模型： https://docs.langchain.com/oss/python/integrations/providers/all_providers
 """
 from __future__ import annotations  # 启用 PEP 563 延迟注解
 import sys  # 导入 sys 标准库
