@@ -81,8 +81,23 @@ def demo_pydantic_parser() -> None:  # 定义函数
 def main() -> None:  # demo 入口函数
     # demo_str_parser()  # 执行本行逻辑
     # demo_json_parser()  # 执行本行逻辑
-    demo_pydantic_parser()  # 执行本行逻辑
+    # demo_pydantic_parser()  # 执行本行逻辑
 
+    """
+    JsonOutputParser 底层逻辑：
+    1. 正则提取文本中被 ```json 包裹的内容；如果没有代码块，直接取全文
+    2. 调用 `json.loads()` 解析成字典
+    3. 解析失败抛出 `OutputParserException`
+    """
+    parser = JsonOutputParser()
+    # 假设llm输出的文本
+    text = """
+    好的，结果如下：
+    ```json
+    {"product":"手机","price":2999}
+    """
+    data = parser.parse(text)
+    print(data["price"])
 
 if __name__ == "__main__":  # 脚本直接运行时执行 main
     main()  # 调用 demo 主函数

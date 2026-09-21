@@ -43,3 +43,5 @@ env/
 *.tempaudio.m4a
 
 .codegraph/
+.rikki/
+*.sqlite

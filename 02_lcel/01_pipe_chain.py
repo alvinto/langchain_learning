@@ -15,6 +15,7 @@ from _common import get_llm, banner  # 导入项目共享 LLM/Embedding 配置
 def main() -> None:  # demo 入口函数
     banner("02-1 LCEL Pipe Chain")  # 打印章节标题分隔条
     prompt = ChatPromptTemplate.from_template("用一个比喻解释 {concept}")  # 由模板创建 ChatPromptTemplate
+    # 构建链式执行流程：prompt → llm → parser **组件之间能拼接的前提：上游输出类型 = 下游输入类型**
     chain = prompt | get_llm() | StrOutputParser()  # 获取 ChatOpenAI 兼容 LLM
 
     print(">> invoke:")  # 打印输出
