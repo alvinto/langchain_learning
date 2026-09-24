@@ -10,10 +10,20 @@
 | [04_vector_store.py](04_vector_store.py) | FAISS 本地向量库，索引可保存到磁盘 |
 | [05_basic_rag.py](05_basic_rag.py) | 一条完整 RAG 链：`retriever → context → prompt → llm` |
 | [06_multi_query_rag.py](06_multi_query_rag.py) | `MultiQueryRetriever`：让 LLM 改写多个 query 提高召回 |
+| [07_multi_turn_rag.py](07_multi_turn_rag.py) | 多轮 RAG 坑点 + **A** / **B**（Lambda 改写）/ **B′**（`RunnablePassthrough.assign` 改写 + 检索） |
 
 ```bash
 python 04_rag/05_basic_rag.py   # 首次跑会自动建索引
+python 04_rag/07_multi_turn_rag.py   # 多轮对话，需 LLM + Embedding API
 ```
+
+### 多轮 RAG 速记
+
+| 坑点 | 对策 |
+| --- | --- |
+| 历史占 token、挤占资料区 | 回答前 `trim_messages`；检索不必塞全量历史 |
+| 追问指代导致召回差 | **A**：检索仍用当前句，历史只给 LLM；**B**：condense 成 standalone query 再检索 |
+| session 无限增长 | 持久化 + 定期 trim / 摘要 / 删除（见 `03_memory/05~07`） |
 
 > 索引存在 `_faiss_index/` 下（已在 `.gitignore` 中），删掉重跑即可重建。
 > 示例文档在 [`data/sample.md`](data/sample.md)，换成你自己的 `.md` 试试。

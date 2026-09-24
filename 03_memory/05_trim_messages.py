@@ -1,10 +1,18 @@
 """
-03-3 trim_messages 裁剪历史
-学到：长对话会爆 token，用 trim_messages 按 token 数或条数滑动窗口。
+03-5 裁剪历史（Trim messages）
+
+Common pattern：短记忆开启后历史变长，用滑动窗口控制送进 LLM 的消息量。
+
+学到：
+- `trim_messages` 按**条数**（`token_counter=len`）或**真实 token**（`token_counter=llm`）裁剪。
+- `strategy="last"` 保留最近对话；`include_system=True` 尽量保留 system；`start_on="human"` 从 human 起算窗口。
+- 与 delete / summarize 并列，是控制上下文的三类手段之一（见 06、07）。
 """
 from __future__ import annotations  # 启用 PEP 563 延迟注解
 import sys  # 导入 sys 标准库
-from pathlib import Path  # 导入 Path 处理路径
+from pathlib import Path
+
+from langchain_core.messages.utils import count_tokens_approximately  # 导入 Path 处理路径
 sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将项目根目录加入模块搜索路径
 
 from langchain_core.messages import (  # 导入消息类型 Human/AI/System
@@ -14,7 +22,7 @@ from _common import get_llm, banner  # 导入项目共享 LLM/Embedding 配置
 
 
 def main() -> None:  # demo 入口函数
-    banner("03-3 trim_messages")  # 打印章节标题分隔条
+    banner("03-5 Trim messages")  # 打印章节标题分隔条
 
     msgs = [  # 赋值给 msgs
         SystemMessage("你是一个助手"),  # 构造系统消息
@@ -44,7 +52,8 @@ def main() -> None:  # demo 入口函数
     trimmed_tokens = trim_messages(  # 赋值给 trimmed_tokens
         msgs,  # 序列/元组元素
         max_tokens=80,  # 执行本行逻辑
-        token_counter=get_llm(),           # 用 LLM 自己的 tokenizer
+        # token_counter=get_llm(),           # 用 LLM 自己的 tokenizer
+        token_counter=count_tokens_approximately,                 # len 即一条算 1
         strategy="last",  # 执行本行逻辑
         include_system=True,  # 执行本行逻辑
         start_on="human",  # 执行本行逻辑
